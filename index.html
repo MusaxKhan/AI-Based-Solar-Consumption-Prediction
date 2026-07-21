@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Solar Advisor — Wah Cantt</title>
+<meta name="theme-color" content="#12181f">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --bg: #0f151c;
+    --surface: #1a232d;
+    --surface-2: #212d39;
+    --line: #2a3742;
+    --amber: #ffb84d;
+    --amber-dim: #7a5a28;
+    --cyan: #4dd0e1;
+    --danger: #ff6b6b;
+    --danger-dim: #4a2a2a;
+    --warn: #f4c95d;
+    --text: #eef2f6;
+    --muted: #8b96a3;
+    --faint: #5b6672;
+    --radius: 14px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(ellipse 900px 500px at 50% -10%, #1c2a38 0%, transparent 60%),
+      var(--bg);
+    color:var(--text);
+    font-family:'Inter', system-ui, sans-serif;
+    min-height:100vh;
+    padding-bottom:48px;
+  }
+  .wrap{max-width:640px; margin:0 auto; padding:20px 16px 0;}
+
+  header.top{display:flex; align-items:baseline; justify-content:space-between; padding:8px 4px 18px;}
+  header.top .brand{font-family:'Sora',sans-serif; font-weight:800; font-size:20px; letter-spacing:-0.02em;}
+  header.top .brand span{color:var(--amber);}
+  header.top .loc{font-size:12px; color:var(--muted); font-family:'IBM Plex Mono', monospace;}
+
+  /* ---- Hero: sun arc ---- */
+  .hero{
+    background: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%);
+    border:1px solid var(--line);
+    border-radius: var(--radius);
+    padding:20px 18px 14px;
+    position:relative;
+    overflow:hidden;
+  }
+  .hero-top{display:flex; justify-content:space-between; align-items:flex-start; gap:12px;}
+  .hero-label{font-size:11px; text-transform:uppercase; letter-spacing:0.09em; color:var(--muted); font-weight:600;}
+  .hero-time{font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--faint);}
+  #sunSvg{width:100%; height:auto; display:block; margin:6px 0 -4px;}
+  .power-readout{
+    display:flex; align-items:baseline; gap:8px; justify-content:center; margin-top:2px;
+  }
+  .power-readout .num{
+    font-family:'Sora', sans-serif; font-weight:800; font-size:44px; letter-spacing:-0.02em;
+    color:var(--amber);
+  }
+  .power-readout .unit{font-size:15px; color:var(--muted); font-weight:600;}
+  .hero-sub{text-align:center; font-size:13px; color:var(--muted); margin-top:2px;}
+  .hero-sub b{color:var(--text); font-weight:600;}
+  .weather-chips{display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:14px;}
+  .chip{
+    font-family:'IBM Plex Mono', monospace; font-size:11.5px; color:var(--text);
+    background:var(--bg); border:1px solid var(--line); border-radius:999px;
+    padding:5px 11px; display:flex; align-items:center; gap:5px;
+  }
+  .chip .dot{width:6px; height:6px; border-radius:50%; background:var(--cyan);}
+
+  /* ---- Budget bar ---- */
+  .budget{margin-top:16px;}
+  .budget-row{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px;}
+  .budget-row .label{font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); font-weight:600;}
+  .budget-row .val{font-family:'IBM Plex Mono',monospace; font-size:13px;}
+  .bar-track{
+    height:14px; border-radius:8px; background:var(--bg); border:1px solid var(--line);
+    overflow:hidden; position:relative;
+  }
+  .bar-fill{height:100%; border-radius:7px; transition: width .4s ease, background .3s ease;}
+  .bar-marker{position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--faint);}
+
+  .status-banner{
+    margin-top:14px; border-radius:10px; padding:12px 14px;
+    display:flex; align-items:center; gap:10px; font-size:14px; font-weight:600;
+    border:1px solid transparent;
+  }
+  .status-banner.ok{background:rgba(77,208,225,0.1); color:var(--cyan); border-color:rgba(77,208,225,0.25);}
+  .status-banner.warn{background:rgba(244,201,93,0.1); color:var(--warn); border-color:rgba(244,201,93,0.25);}
+  .status-banner.danger{background:rgba(255,107,107,0.1); color:var(--danger); border-color:rgba(255,107,107,0.25);}
+  .status-banner .icon{font-size:18px;}
+
+  /* ---- sections ---- */
+  section{margin-top:22px;}
+  .sec-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;}
+  .sec-head h2{font-family:'Sora',sans-serif; font-size:15px; margin:0; font-weight:700;}
+  .sec-head .hint{font-size:11.5px; color:var(--faint);}
+
+  .appliance-list{display:flex; flex-direction:column; gap:8px;}
+  .appliance{
+    display:flex; align-items:center; gap:12px;
+    background:var(--surface); border:1px solid var(--line); border-radius:10px;
+    padding:11px 12px;
+  }
+  .appliance.active{border-color:var(--amber-dim); background:linear-gradient(90deg, rgba(255,184,77,0.08), var(--surface) 40%);}
+  .appliance .toggle{
+    width:40px; height:24px; border-radius:999px; background:var(--bg); border:1px solid var(--line);
+    position:relative; flex-shrink:0; cursor:pointer; transition:background .2s;
+  }
+  .appliance .toggle::after{
+    content:''; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%;
+    background:var(--faint); transition:transform .2s, background .2s;
+  }
+  .appliance.active .toggle{background:var(--amber-dim); border-color:var(--amber);}
+  .appliance.active .toggle::after{transform:translateX(16px); background:var(--amber);}
+  .appliance .info{flex:1; min-width:0;}
+  .appliance .name{font-size:14.5px; font-weight:600;}
+  .appliance .watt-edit{font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--muted); border:none; background:transparent; width:70px; padding:0;}
+  .appliance .watt-edit:focus{color:var(--text); outline:none;}
+  .appliance .del{background:none; border:none; color:var(--faint); font-size:16px; cursor:pointer; padding:4px 6px; line-height:1;}
+  .appliance .del:hover{color:var(--danger);}
+
+  .add-row{display:flex; gap:8px; margin-top:10px;}
+  .add-row input{
+    background:var(--surface); border:1px solid var(--line); border-radius:8px; color:var(--text);
+    padding:9px 10px; font-size:13px; font-family:'Inter',sans-serif;
+  }
+  .add-row input[name="name"]{flex:1;}
+  .add-row input[name="watt"]{width:90px; font-family:'IBM Plex Mono',monospace;}
+  .add-row button{
+    background:var(--amber); color:#20160a; border:none; border-radius:8px; padding:0 16px;
+    font-weight:700; font-size:13px; cursor:pointer;
+  }
+
+  /* ---- settings ---- */
+  details.settings{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:4px 16px;}
+  details.settings summary{padding:12px 0; cursor:pointer; font-weight:700; font-family:'Sora',sans-serif; font-size:14px; list-style:none; display:flex; justify-content:space-between; align-items:center;}
+  details.settings summary::-webkit-details-marker{display:none;}
+  details.settings summary::after{content:'▾'; color:var(--faint); transition:transform .2s;}
+  details.settings[open] summary::after{transform:rotate(180deg);}
+  .settings-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px; padding-bottom:16px;}
+  .field{display:flex; flex-direction:column; gap:4px;}
+  .field label{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.06em;}
+  .field input, .field select{
+    background:var(--bg); border:1px solid var(--line); border-radius:8px; color:var(--text);
+    padding:8px 9px; font-size:13px; font-family:'IBM Plex Mono',monospace;
+  }
+  .field.full{grid-column:1 / -1;}
+
+  footer{text-align:center; margin-top:28px; font-size:11px; color:var(--faint); padding:0 20px;}
+  footer a{color:var(--faint);}
+
+  .install-banner{
+    display:none; align-items:center; justify-content:space-between; gap:10px;
+    background:var(--surface-2); border:1px solid var(--line); border-radius:10px;
+    padding:10px 14px; margin-top:16px; font-size:12.5px;
+  }
+  .install-banner button{background:var(--amber); color:#20160a; border:none; border-radius:7px; padding:7px 12px; font-weight:700; font-size:12px;}
+
+  @media (max-width:400px){
+    .power-readout .num{font-size:36px;}
+    .settings-grid{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand">Solar<span>Advisor</span></div>
+    <div class="loc" id="locLabel">Wah Cantt · loading…</div>
+  </header>
+
+  <div class="hero">
+    <div class="hero-top">
+      <div class="hero-label">Solar-only mode budget</div>
+      <div class="hero-time" id="clock">--:--</div>
+    </div>
+
+    <svg id="sunSvg" viewBox="0 0 300 110"></svg>
+
+    <div class="power-readout">
+      <span class="num" id="availWatts">–</span>
+      <span class="unit">W available</span>
+    </div>
+    <div class="hero-sub" id="heroSub">Fetching sky conditions…</div>
+
+    <div class="weather-chips" id="weatherChips"></div>
+  </div>
+
+  <div class="budget">
+    <div class="budget-row">
+      <span class="label">Load budget</span>
+      <span class="val" id="budgetVal">0 / 0 W</span>
+    </div>
+    <div class="bar-track">
+      <div class="bar-fill" id="barFill" style="width:0%; background:var(--cyan);"></div>
+      <div class="bar-marker" id="barMarker" style="left:100%;"></div>
+    </div>
+  </div>
+
+  <div class="status-banner ok" id="statusBanner">
+    <span class="icon">☀️</span>
+    <span id="statusText">Add appliances below to see what's safe to run.</span>
+  </div>
+
+  <section>
+    <div class="sec-head">
+      <h2>Appliances</h2>
+      <span class="hint">tap to toggle on/off</span>
+    </div>
+    <div class="appliance-list" id="applianceList"></div>
+    <div class="add-row">
+      <input type="text" name="name" id="newName" placeholder="Appliance name">
+      <input type="number" name="watt" id="newWatt" placeholder="Watts">
+      <button id="addBtn">Add</button>
+    </div>
+  </section>
+
+  <section>
+    <details class="settings" id="settingsPanel">
+      <summary>System settings</summary>
+      <div class="settings-grid">
+        <div class="field">
+          <label>Panel count</label>
+          <input type="number" id="cfgPanelCount" value="6">
+        </div>
+        <div class="field">
+          <label>Watt per panel (STC)</label>
+          <input type="number" id="cfgPanelWatt" value="645">
+        </div>
+        <div class="field">
+          <label>Array azimuth (° from N)</label>
+          <input type="number" id="cfgAzimuth" value="315">
+        </div>
+        <div class="field">
+          <label>Panel tilt (°)</label>
+          <input type="number" id="cfgTilt" value="25">
+        </div>
+        <div class="field">
+          <label>Inverter capacity (W)</label>
+          <input type="number" id="cfgInverter" value="6000">
+        </div>
+        <div class="field">
+          <label>System derate (%)</label>
+          <input type="number" id="cfgDerate" value="82">
+        </div>
+        <div class="field full">
+          <label>Safety margin — keep this much headroom (%)</label>
+          <input type="number" id="cfgMargin" value="15">
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <div class="install-banner" id="installBanner">
+    <span>Install this on your home screen for one-tap access.</span>
+    <button id="installBtn">Install</button>
+  </div>
+
+  <footer>
+    Estimates use live sky irradiance for Wah Cantt · not a substitute for your inverter's own protection cut-off.<br>
+    Array facing NW: expect below-average output vs. a south-facing array of the same size.
+  </footer>
+</div>
+
+<script>
+/* =========================================================
+   SOLAR ADVISOR — core logic
+   1. Sun position (NOAA simplified algorithm)
+   2. Plane-of-array irradiance from Open-Meteo GHI/DNI/DHI
+   3. PV output estimate with temperature derate
+   4. Appliance load fitting against available budget
+   ========================================================= */
+
+const LAT = 33.7967;   // Wah Cantt
+const LON = 72.7297;
+const STORAGE_KEY = "solar_advisor_state_v1";
+
+const DEFAULT_APPLIANCES = [
+  { id: "ac1",     name: "1.5 Ton Inverter AC (avg)", watt: 1500, active: false },
+  { id: "fridge",  name: "Refrigerator",               watt: 180,  active: true  },
+  { id: "motor",   name: "Water Motor (1 HP)",         watt: 750,  active: false },
+  { id: "fans",    name: "Ceiling Fans (x3)",          watt: 225,  active: true  },
+  { id: "lights",  name: "Lights (LED, whole house)",  watt: 120,  active: true  },
+  { id: "washer",  name: "Washing Machine",             watt: 500,  active: false },
+  { id: "iron",    name: "Electric Iron",               watt: 1000, active: false },
+  { id: "tv",      name: "TV + Router",                 watt: 150,  active: true  },
+];
+
+const DEFAULT_CONFIG = {
+  panelCount: 6,
+  panelWatt: 645,
+  azimuth: 315,
+  tilt: 25,
+  inverterCap: 6000,
+  derate: 82,
+  margin: 15
+};
+
+function loadState(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw) return JSON.parse(raw);
+  }catch(e){}
+  return { appliances: DEFAULT_APPLIANCES, config: DEFAULT_CONFIG };
+}
+function saveState(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+let state = loadState();
+
+/* ---------- Sun position (simplified NOAA solar position) ---------- */
+function getSunPosition(date, lat, lon){
+  const rad = Math.PI/180;
+  const jday = date.getTime()/86400000 + 2440587.5;
+  const n = jday - 2451545.0;
+  let L = (280.460 + 0.9856474*n) % 360; if(L<0) L+=360;
+  let g = (357.528 + 0.9856003*n) % 360; if(g<0) g+=360;
+  const lambda = L + 1.915*Math.sin(g*rad) + 0.020*Math.sin(2*g*rad);
+  const epsilon = 23.439 - 0.0000004*n;
+  const alpha = Math.atan2(Math.cos(epsilon*rad)*Math.sin(lambda*rad), Math.cos(lambda*rad)) / rad;
+  const delta = Math.asin(Math.sin(epsilon*rad)*Math.sin(lambda*rad)) / rad;
+
+  const gmst = (18.697374558 + 24.06570982441908*n) % 24;
+  let lst = (gmst + lon/15) % 24; if(lst<0) lst+=24;
+  let ha = (lst*15 - alpha); // hour angle in degrees
+  if(ha > 180) ha -= 360;
+  if(ha < -180) ha += 360;
+
+  const latR = lat*rad, deltaR = delta*rad, haR = ha*rad;
+  const elevation = Math.asin(Math.sin(latR)*Math.sin(deltaR) + Math.cos(latR)*Math.cos(deltaR)*Math.cos(haR)) / rad;
+  let azimuth = Math.atan2(
+    -Math.sin(haR),
+    Math.tan(deltaR)*Math.cos(latR) - Math.sin(latR)*Math.cos(haR)
+  ) / rad;
+  azimuth = (azimuth + 360) % 360;
+
+  return { elevation, azimuth };
+}
+
+/* ---------- Plane of array irradiance ---------- */
+function poaIrradiance(ghi, dni, dhi, sunEl, sunAz, panelTilt, panelAz){
+  if(sunEl <= 0) return 0;
+  const rad = Math.PI/180;
+  const cosIncidence =
+    Math.sin(sunEl*rad)*Math.cos(panelTilt*rad) +
+    Math.cos(sunEl*rad)*Math.sin(panelTilt*rad)*Math.cos((sunAz-panelAz)*rad);
+  const directPOA = Math.max(0, dni * Math.max(0, cosIncidence));
+  const diffusePOA = dhi * (1 + Math.cos(panelTilt*rad)) / 2; // isotropic sky
+  const groundRefl = ghi * 0.2 * (1 - Math.cos(panelTilt*rad)) / 2; // 0.2 albedo
+  return directPOA + diffusePOA + groundRefl;
+}
+
+/* ---------- Weather fetch ---------- */
+async function fetchWeather(){
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}` +
+    `&hourly=shortwave_radiation,direct_normal_irradiance,diffuse_radiation,temperature_2m,cloud_cover` +
+    `&current=temperature_2m,cloud_cover,shortwave_radiation,direct_normal_irradiance,diffuse_radiation` +
+    `&timezone=auto`;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error("weather fetch failed");
+  return res.json();
+}
+
+let weatherCache = null;
+
+async function refresh(){
+  const now = new Date();
+  document.getElementById('clock').textContent = now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+
+  try{
+    if(!weatherCache || (Date.now() - weatherCache._fetchedAt) > 10*60*1000){
+      weatherCache = await fetchWeather();
+      weatherCache._fetchedAt = Date.now();
+    }
+  }catch(e){
+    document.getElementById('heroSub').textContent = "Couldn't reach weather service — check your connection.";
+    document.getElementById('locLabel').textContent = "Wah Cantt · offline";
+    renderSunArc(null, 0);
+    return;
+  }
+
+  document.getElementById('locLabel').textContent = "Wah Cantt · " + now.toLocaleDateString([], {month:'short', day:'numeric'});
+
+  const cur = weatherCache.current;
+  const ghi = cur.shortwave_radiation || 0;
+  const dni = cur.direct_normal_irradiance || 0;
+  const dhi = cur.diffuse_radiation || 0;
+  const temp = cur.temperature_2m;
+  const cloud = cur.cloud_cover;
+
+  const sun = getSunPosition(now, LAT, LON);
+  const cfg = state.config;
+
+  const poa = poaIrradiance(ghi, dni, dhi, sun.elevation, sun.azimuth, cfg.tilt, cfg.azimuth);
+
+  // cell temperature estimate (simple NOCT-ish model) and temp derate
+  const cellTemp = temp + (poa/800)*25; // NOCT ~45C at 800W/m2, 20C ambient rise approx
+  const tempDerateFactor = 1 - Math.max(0, (cellTemp - 25))*0.004; // -0.4%/°C above 25
+
+  const stcWatts = cfg.panelCount * cfg.panelWatt;
+  const systemDerate = cfg.derate/100;
+
+  let availableWatts = (poa/1000) * stcWatts * Math.max(0.2, tempDerateFactor) * systemDerate;
+  availableWatts = Math.max(0, Math.round(availableWatts));
+  availableWatts = Math.min(availableWatts, cfg.inverterCap);
+
+  document.getElementById('availWatts').textContent = availableWatts.toLocaleString();
+
+  let subMsg;
+  if(sun.elevation <= 0){ subMsg = "Sun is below the horizon — solar-only mode isn't viable."; }
+  else if(poa < 50){ subMsg = "Very low light — heavy cloud or early/late sun angle."; }
+  else { subMsg = `Sun at ${sun.elevation.toFixed(0)}° elevation · panel array facing NW loses some yield vs. direct sun.`; }
+  document.getElementById('heroSub').textContent = subMsg;
+
+  renderChips(cloud, temp, poa);
+  renderSunArc(sun, poa > 20 ? 1 : 0);
+  updateBudget(availableWatts);
+}
+
+function renderChips(cloud, temp, poa){
+  const chips = document.getElementById('weatherChips');
+  chips.innerHTML = '';
+  const items = [
+    { label: `${cloud ?? '–'}% cloud` },
+    { label: `${temp != null ? temp.toFixed(0) : '–'}°C` },
+    { label: `${Math.round(poa)} W/m² on panels` },
+  ];
+  items.forEach(it => {
+    const c = document.createElement('div');
+    c.className = 'chip';
+    c.innerHTML = `<span class="dot"></span>${it.label}`;
+    chips.appendChild(c);
+  });
+}
+
+function renderSunArc(sun, lit){
+  const svg = document.getElementById('sunSvg');
+  const w = 300, h = 110, groundY = 92;
+  let sunX = 150, sunY = groundY, visible = false;
+
+  if(sun && sun.elevation > -5){
+    // map elevation 0-90 to arc height, azimuth roughly to x position across visible sky (90-270 East-South-West band simplified to full width)
+    const t = Math.max(0, Math.min(1, (sun.azimuth) / 360));
+    sunX = 20 + t*260;
+    const elevNorm = Math.max(0, Math.min(1, sun.elevation/90));
+    sunY = groundY - elevNorm*70;
+    visible = sun.elevation > 0;
+  }
+
+  const arcPath = `M 20 ${groundY} Q 150 ${groundY-85} 280 ${groundY}`;
+
+  svg.innerHTML = `
+    <defs>
+      <linearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#24344a"/>
+        <stop offset="100%" stop-color="#17202b"/>
+      </linearGradient>
+    </defs>
+    <path d="${arcPath}" fill="none" stroke="#2a3742" stroke-width="1.5" stroke-dasharray="3,4"/>
+    <line x1="15" y1="${groundY}" x2="285" y2="${groundY}" stroke="#2a3742" stroke-width="1.5"/>
+    <text x="20" y="${groundY+16}" font-size="9" fill="#5b6672" font-family="IBM Plex Mono, monospace">N</text>
+    <text x="145" y="${groundY+16}" font-size="9" fill="#5b6672" font-family="IBM Plex Mono, monospace">E/S</text>
+    <text x="268" y="${groundY+16}" font-size="9" fill="#5b6672" font-family="IBM Plex Mono, monospace">N</text>
+    ${visible ? `
+      <circle cx="${sunX}" cy="${sunY}" r="9" fill="${lit ? '#ffb84d' : '#5b6672'}" opacity="${lit?1:0.5}"/>
+      <circle cx="${sunX}" cy="${sunY}" r="14" fill="${lit ? '#ffb84d' : '#5b6672'}" opacity="0.15"/>
+    ` : `<text x="150" y="60" text-anchor="middle" font-size="10" fill="#5b6672" font-family="IBM Plex Mono, monospace">below horizon</text>`}
+  `;
+}
+
+/* ---------- Appliance rendering & budget ---------- */
+function renderAppliances(){
+  const list = document.getElementById('applianceList');
+  list.innerHTML = '';
+  state.appliances.forEach(a => {
+    const row = document.createElement('div');
+    row.className = 'appliance' + (a.active ? ' active' : '');
+    row.innerHTML = `
+      <div class="toggle" data-id="${a.id}"></div>
+      <div class="info">
+        <div class="name">${a.name}</div>
+      </div>
+      <input class="watt-edit" type="number" value="${a.watt}" data-id="${a.id}">
+      <button class="del" data-id="${a.id}">×</button>
+    `;
+    list.appendChild(row);
+  });
+
+  list.querySelectorAll('.toggle').forEach(t => t.addEventListener('click', e => {
+    const id = e.currentTarget.dataset.id;
+    const a = state.appliances.find(x => x.id === id);
+    a.active = !a.active;
+    saveState(); renderAppliances(); recomputeBudget();
+  }));
+  list.querySelectorAll('.watt-edit').forEach(inp => inp.addEventListener('change', e => {
+    const id = e.currentTarget.dataset.id;
+    const a = state.appliances.find(x => x.id === id);
+    a.watt = Math.max(0, parseInt(e.currentTarget.value) || 0);
+    saveState(); recomputeBudget();
+  }));
+  list.querySelectorAll('.del').forEach(btn => btn.addEventListener('click', e => {
+    const id = e.currentTarget.dataset.id;
+    state.appliances = state.appliances.filter(x => x.id !== id);
+    saveState(); renderAppliances(); recomputeBudget();
+  }));
+}
+
+let lastAvailable = 0;
+function updateBudget(availableWatts){
+  lastAvailable = availableWatts;
+  recomputeBudget();
+}
+
+function recomputeBudget(){
+  const cfg = state.config;
+  const activeLoad = state.appliances.filter(a=>a.active).reduce((s,a)=>s+a.watt,0);
+  const safeLimit = lastAvailable * (1 - cfg.margin/100);
+
+  document.getElementById('budgetVal').textContent = `${activeLoad.toLocaleString()} / ${Math.round(lastAvailable).toLocaleString()} W`;
+
+  const pct = lastAvailable > 0 ? Math.min(140, (activeLoad/lastAvailable)*100) : (activeLoad>0?140:0);
+  const fill = document.getElementById('barFill');
+  fill.style.width = Math.min(100, pct) + '%';
+
+  const marker = document.getElementById('barMarker');
+  const markerPct = 100 - cfg.margin;
+  marker.style.left = markerPct + '%';
+
+  const banner = document.getElementById('statusBanner');
+  const text = document.getElementById('statusText');
+  banner.className = 'status-banner';
+
+  if(activeLoad === 0){
+    banner.classList.add('ok');
+    text.textContent = "No appliances selected yet.";
+    banner.querySelector('.icon').textContent = '💤';
+  } else if(activeLoad <= safeLimit){
+    banner.classList.add('ok');
+    text.textContent = `Safe — ${Math.round(safeLimit-activeLoad)} W of headroom left before the margin line.`;
+    banner.querySelector('.icon').textContent = '✅';
+  } else if(activeLoad <= lastAvailable){
+    banner.classList.add('warn');
+    text.textContent = `Inside your panel budget, but under ${cfg.margin}% safety margin — a cloud could trip the inverter.`;
+    banner.querySelector('.icon').textContent = '⚠️';
+  } else {
+    banner.classList.add('danger');
+    text.textContent = `Over budget by ${Math.round(activeLoad-lastAvailable)} W — inverter will likely cut out. Turn something off.`;
+    banner.querySelector('.icon').textContent = '⛔';
+  }
+}
+
+/* ---------- Settings binding ---------- */
+function bindSettings(){
+  const map = {
+    cfgPanelCount: 'panelCount', cfgPanelWatt: 'panelWatt', cfgAzimuth: 'azimuth',
+    cfgTilt: 'tilt', cfgInverter: 'inverterCap', cfgDerate: 'derate', cfgMargin: 'margin'
+  };
+  Object.entries(map).forEach(([elId, key]) => {
+    const el = document.getElementById(elId);
+    el.value = state.config[key];
+    el.addEventListener('change', () => {
+      state.config[key] = parseFloat(el.value) || 0;
+      saveState();
+      refresh();
+    });
+  });
+}
+
+document.getElementById('addBtn').addEventListener('click', () => {
+  const nameEl = document.getElementById('newName');
+  const wattEl = document.getElementById('newWatt');
+  const name = nameEl.value.trim();
+  const watt = parseInt(wattEl.value) || 0;
+  if(!name || watt <= 0) return;
+  state.appliances.push({ id: 'a'+Date.now(), name, watt, active: false });
+  saveState(); renderAppliances(); recomputeBudget();
+  nameEl.value = ''; wattEl.value = '';
+});
+
+/* ---------- PWA install prompt ---------- */
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  document.getElementById('installBanner').style.display = 'flex';
+});
+document.getElementById('installBtn').addEventListener('click', async () => {
+  if(!deferredPrompt) return;
+  deferredPrompt.prompt();
+  await deferredPrompt.userChoice;
+  deferredPrompt = null;
+  document.getElementById('installBanner').style.display = 'none';
+});
+
+/* ---------- Service worker ---------- */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
+
+/* ---------- Init ---------- */
+renderAppliances();
+bindSettings();
+refresh();
+setInterval(refresh, 5*60*1000); // refresh every 5 min
+setInterval(() => {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+}, 30*1000);
+</script>
+</body>
+</html>
