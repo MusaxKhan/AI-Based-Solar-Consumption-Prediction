@@ -191,6 +191,109 @@
   #seasonalChartWrap{margin-top:14px;}
   .month-readout{display:flex; justify-content:space-between; font-size:11px; color:var(--faint); margin-top:6px; font-family:'IBM Plex Mono',monospace;}
 
+  /* ---- logging ---- */
+  .log-btn{
+    width:100%; margin-top:12px; background:var(--surface-2); border:1px solid var(--line);
+    color:var(--text); border-radius:10px; padding:11px; font-weight:600; font-size:13.5px;
+    cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;
+  }
+  .log-btn:hover{border-color:var(--cyan);}
+  .modal-overlay{
+    display:none; position:fixed; inset:0; background:rgba(6,9,12,0.72); z-index:50;
+    align-items:flex-end; justify-content:center;
+  }
+  .modal-overlay.open{display:flex;}
+  .modal-card{
+    background:var(--surface); border:1px solid var(--line); border-radius:16px 16px 0 0;
+    width:100%; max-width:640px; padding:20px 18px 24px; max-height:85vh; overflow-y:auto;
+  }
+  @media (min-width:660px){
+    .modal-overlay{align-items:center;}
+    .modal-card{border-radius:16px; max-width:420px;}
+  }
+  .modal-card h3{font-family:'Sora',sans-serif; margin:0 0 4px; font-size:17px;}
+  .modal-snapshot{
+    font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--muted);
+    background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin:12px 0;
+    line-height:1.6;
+  }
+  .outcome-row{display:flex; gap:8px; margin:14px 0;}
+  .outcome-btn{
+    flex:1; padding:12px 6px; border-radius:10px; border:1px solid var(--line); background:var(--bg);
+    color:var(--muted); font-weight:600; font-size:13px; cursor:pointer; text-align:center;
+  }
+  .outcome-btn.selected.held{border-color:var(--cyan); color:var(--cyan); background:rgba(77,208,225,0.1);}
+  .outcome-btn.selected.tripped{border-color:var(--danger); color:var(--danger); background:rgba(255,107,107,0.1);}
+  .outcome-btn.selected.flicker{border-color:var(--warn); color:var(--warn); background:rgba(244,201,93,0.1);}
+  .modal-note{
+    width:100%; background:var(--bg); border:1px solid var(--line); border-radius:8px; color:var(--text);
+    padding:9px 10px; font-size:13px; font-family:'Inter',sans-serif; resize:vertical; min-height:60px;
+  }
+  .modal-actions{display:flex; gap:10px; margin-top:14px;}
+  .modal-actions button{flex:1; border-radius:9px; padding:11px; font-weight:700; font-size:13.5px; border:none; cursor:pointer;}
+  .modal-cancel{background:var(--bg); color:var(--muted); border:1px solid var(--line) !important;}
+  .modal-save{background:var(--amber); color:#20160a;}
+  .modal-save:disabled{opacity:0.4; cursor:default;}
+
+  .log-history-item{
+    display:flex; justify-content:space-between; align-items:center; gap:10px;
+    padding:10px 0; border-bottom:1px solid var(--line); font-size:12.5px;
+  }
+  .log-history-item:last-child{border-bottom:none;}
+  .log-history-item .lh-left{display:flex; flex-direction:column; gap:2px;}
+  .log-history-item .lh-time{color:var(--faint); font-family:'IBM Plex Mono',monospace; font-size:11px;}
+  .log-history-item .lh-detail{color:var(--muted);}
+  .log-history-item .lh-outcome{font-weight:700; font-size:11px; padding:3px 9px; border-radius:999px;}
+  .lh-outcome.held{color:var(--cyan); background:rgba(77,208,225,0.12);}
+  .lh-outcome.tripped{color:var(--danger); background:rgba(255,107,107,0.12);}
+  .lh-outcome.flicker{color:var(--warn); background:rgba(244,201,93,0.12);}
+  .log-empty{font-size:12.5px; color:var(--faint); text-align:center; padding:12px 0;}
+  .log-export-row{display:flex; gap:8px; margin-top:12px;}
+  .log-export-row button{
+    flex:1; background:var(--bg); border:1px solid var(--line); color:var(--muted);
+    border-radius:8px; padding:9px; font-size:12.5px; font-weight:600; cursor:pointer;
+  }
+
+  /* ---- chat agent ---- */
+  .chat-fab{
+    position:fixed; right:18px; bottom:18px; width:54px; height:54px; border-radius:50%;
+    background:var(--amber); color:#20160a; border:none; font-size:22px; cursor:pointer;
+    box-shadow:0 6px 20px rgba(0,0,0,0.35); z-index:40; display:flex; align-items:center; justify-content:center;
+  }
+  .chat-panel{
+    display:none; position:fixed; right:18px; bottom:82px; width:min(360px, calc(100vw - 36px));
+    height:min(480px, calc(100vh - 140px)); background:var(--surface); border:1px solid var(--line);
+    border-radius:16px; z-index:41; flex-direction:column; overflow:hidden;
+    box-shadow:0 12px 40px rgba(0,0,0,0.45);
+  }
+  .chat-panel.open{display:flex;}
+  .chat-header{
+    padding:12px 14px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center;
+  }
+  .chat-header .title{font-family:'Sora',sans-serif; font-weight:700; font-size:14px;}
+  .chat-header .close{background:none; border:none; color:var(--faint); font-size:18px; cursor:pointer;}
+  .chat-messages{flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:10px;}
+  .chat-msg{max-width:85%; padding:9px 12px; border-radius:12px; font-size:13px; line-height:1.5;}
+  .chat-msg.user{align-self:flex-end; background:var(--amber-dim); color:var(--text); border-bottom-right-radius:3px;}
+  .chat-msg.assistant{align-self:flex-start; background:var(--surface-2); color:var(--text); border-bottom-left-radius:3px;}
+  .chat-msg.system-note{align-self:center; color:var(--faint); font-size:11px; text-align:center; background:none;}
+  .chat-input-row{display:flex; gap:8px; padding:10px; border-top:1px solid var(--line);}
+  .chat-input-row input{
+    flex:1; background:var(--bg); border:1px solid var(--line); border-radius:20px; color:var(--text);
+    padding:9px 14px; font-size:13px;
+  }
+  .chat-input-row button{
+    background:var(--amber); color:#20160a; border:none; border-radius:50%; width:36px; height:36px;
+    font-weight:700; cursor:pointer; flex-shrink:0;
+  }
+  .chat-input-row button:disabled{opacity:0.4;}
+  .chat-setup{padding:14px; font-size:12px; color:var(--muted); line-height:1.6;}
+  .chat-setup input{
+    width:100%; background:var(--bg); border:1px solid var(--line); border-radius:8px; color:var(--text);
+    padding:8px 9px; font-size:12px; font-family:'IBM Plex Mono',monospace; margin-top:6px;
+  }
+  .chat-setup button{margin-top:10px; background:var(--cyan); color:#0a2226; border:none; border-radius:7px; padding:8px 14px; font-weight:700; font-size:12.5px; cursor:pointer;}
+
   @media (max-width:400px){
     .power-readout .num{font-size:36px;}
     .settings-grid{grid-template-columns:1fr;}
@@ -254,7 +357,37 @@
       <input type="number" name="watt" id="newWatt" placeholder="Watts">
       <button id="addBtn">Add</button>
     </div>
+    <button class="log-btn" id="openLogBtn">📝 Log what happened just now</button>
   </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Test history</h2>
+      <span class="hint" id="logCount">0 entries</span>
+    </div>
+    <div id="logHistoryList"><div class="log-empty">No tests logged yet — use the button above after you try something.</div></div>
+    <div class="log-export-row">
+      <button id="exportCsvBtn">Export CSV</button>
+      <button id="exportJsonBtn">Export JSON</button>
+    </div>
+  </section>
+
+  <div class="modal-overlay" id="logModal">
+    <div class="modal-card">
+      <h3>What happened?</h3>
+      <div class="modal-snapshot" id="modalSnapshot"></div>
+      <div class="outcome-row">
+        <button class="outcome-btn" data-outcome="held">✅ Held fine</button>
+        <button class="outcome-btn" data-outcome="flicker">⚠️ Flickered</button>
+        <button class="outcome-btn" data-outcome="tripped">⛔ Tripped</button>
+      </div>
+      <textarea class="modal-note" id="logNote" placeholder="Optional note (e.g. 'AC took a while to start')"></textarea>
+      <div class="modal-actions">
+        <button class="modal-cancel" id="cancelLogBtn">Cancel</button>
+        <button class="modal-save" id="saveLogBtn" disabled>Save entry</button>
+      </div>
+    </div>
+  </div>
 
   <section>
     <details class="settings" id="seasonalPanel">
@@ -317,6 +450,25 @@
     Estimates use live sky irradiance for Wah Cantt · not a substitute for your inverter's own protection cut-off.<br>
     Array facing NW: expect below-average output vs. a south-facing array of the same size.
   </footer>
+</div>
+
+<button class="chat-fab" id="chatFab" title="Ask about your solar budget">💬</button>
+<div class="chat-panel" id="chatPanel">
+  <div class="chat-header">
+    <span class="title">Ask Solar Advisor</span>
+    <button class="close" id="chatCloseBtn">×</button>
+  </div>
+  <div id="chatSetup" class="chat-setup">
+    Needs a small backend running locally (see README → "Agent backend").
+    <br>Backend URL:
+    <input type="text" id="agentUrl" value="http://localhost:8787" placeholder="http://localhost:8787">
+    <br><button id="agentConnectBtn">Connect</button>
+  </div>
+  <div class="chat-messages" id="chatMessages" style="display:none;"></div>
+  <div class="chat-input-row" id="chatInputRow" style="display:none;">
+    <input type="text" id="chatInput" placeholder="Can I run the AC and washer?">
+    <button id="chatSendBtn">➤</button>
+  </div>
 </div>
 
 <script>
@@ -807,6 +959,110 @@ function renderSeasonalChart(monthlyAvg){
   `;
 }
 
+/* ---------- Test logging ----------
+   Every "what actually happened" entry is real ground-truth data about YOUR system —
+   this is what eventually trains the correction model, dongle or not.
+*/
+const LOG_KEY = "solar_advisor_logs_v1";
+function loadLogs(){ try{ return JSON.parse(localStorage.getItem(LOG_KEY)) || []; }catch(e){ return []; } }
+function saveLogs(logs){ localStorage.setItem(LOG_KEY, JSON.stringify(logs)); }
+
+let pendingSnapshot = null;
+let selectedOutcome = null;
+
+document.getElementById('openLogBtn').addEventListener('click', () => {
+  const activeApp = state.appliances.filter(a=>a.active);
+  pendingSnapshot = {
+    time: new Date().toISOString(),
+    predictedWatts: lastAvailable,
+    activeLoad: activeApp.reduce((s,a)=>s+a.watt,0),
+    appliances: activeApp.map(a=>a.name).join(', ') || '(none)',
+    azimuth: state.config.azimuth,
+    tilt: state.config.tilt,
+  };
+  document.getElementById('modalSnapshot').innerHTML =
+    `Predicted available: <b style="color:var(--text)">${pendingSnapshot.predictedWatts} W</b><br>` +
+    `Running now: <b style="color:var(--text)">${pendingSnapshot.appliances}</b> (${pendingSnapshot.activeLoad} W)<br>` +
+    `${new Date(pendingSnapshot.time).toLocaleString([], {hour:'2-digit', minute:'2-digit', month:'short', day:'numeric'})}`;
+  selectedOutcome = null;
+  document.querySelectorAll('.outcome-btn').forEach(b => b.classList.remove('selected','held','tripped','flicker'));
+  document.getElementById('logNote').value = '';
+  document.getElementById('saveLogBtn').disabled = true;
+  document.getElementById('logModal').classList.add('open');
+});
+
+document.getElementById('cancelLogBtn').addEventListener('click', () => {
+  document.getElementById('logModal').classList.remove('open');
+});
+
+document.querySelectorAll('.outcome-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.outcome-btn').forEach(b => b.classList.remove('selected','held','tripped','flicker'));
+    selectedOutcome = btn.dataset.outcome;
+    btn.classList.add('selected', selectedOutcome);
+    document.getElementById('saveLogBtn').disabled = false;
+  });
+});
+
+document.getElementById('saveLogBtn').addEventListener('click', () => {
+  if(!selectedOutcome || !pendingSnapshot) return;
+  const logs = loadLogs();
+  logs.unshift({
+    ...pendingSnapshot,
+    outcome: selectedOutcome,
+    note: document.getElementById('logNote').value.trim()
+  });
+  saveLogs(logs);
+  document.getElementById('logModal').classList.remove('open');
+  renderLogHistory();
+});
+
+function renderLogHistory(){
+  const logs = loadLogs();
+  document.getElementById('logCount').textContent = `${logs.length} ${logs.length===1?'entry':'entries'}`;
+  const list = document.getElementById('logHistoryList');
+  if(logs.length === 0){
+    list.innerHTML = `<div class="log-empty">No tests logged yet — use the button above after you try something.</div>`;
+    return;
+  }
+  list.innerHTML = logs.slice(0,25).map((l,i) => {
+    const outcomeLabel = { held:'Held', tripped:'Tripped', flicker:'Flickered' }[l.outcome];
+    return `
+      <div class="log-history-item">
+        <div class="lh-left">
+          <span class="lh-time">${new Date(l.time).toLocaleString([], {hour:'2-digit', minute:'2-digit', month:'short', day:'numeric'})}</span>
+          <span class="lh-detail">${l.appliances} · predicted ${l.predictedWatts}W, drew ${l.activeLoad}W${l.note ? ' · '+l.note : ''}</span>
+        </div>
+        <span class="lh-outcome ${l.outcome}">${outcomeLabel}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+document.getElementById('exportCsvBtn').addEventListener('click', () => {
+  const logs = loadLogs();
+  if(logs.length === 0) return;
+  const headers = ['time','predictedWatts','activeLoad','appliances','azimuth','tilt','outcome','note'];
+  const rows = logs.map(l => headers.map(h => `"${String(l[h]??'').replace(/"/g,'""')}"`).join(','));
+  const csv = headers.join(',') + '\n' + rows.join('\n');
+  downloadBlob(csv, 'solar-advisor-logs.csv', 'text/csv');
+});
+
+document.getElementById('exportJsonBtn').addEventListener('click', () => {
+  const logs = loadLogs();
+  if(logs.length === 0) return;
+  downloadBlob(JSON.stringify(logs, null, 2), 'solar-advisor-logs.json', 'application/json');
+});
+
+function downloadBlob(content, filename, type){
+  const blob = new Blob([content], {type});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 /* ---------- PWA install prompt ---------- */
 let deferredPrompt;
 window.addEventListener('beforeinstallprompt', (e) => {
@@ -829,9 +1085,115 @@ if('serviceWorker' in navigator){
   });
 }
 
+/* ---------- Chat agent ---------- */
+let agentUrl = localStorage.getItem('solar_advisor_agent_url') || 'http://localhost:8787';
+let chatHistory = [];
+let agentConnected = false;
+
+document.getElementById('agentUrl').value = agentUrl;
+document.getElementById('chatFab').addEventListener('click', () => {
+  document.getElementById('chatPanel').classList.add('open');
+});
+document.getElementById('chatCloseBtn').addEventListener('click', () => {
+  document.getElementById('chatPanel').classList.remove('open');
+});
+
+document.getElementById('agentConnectBtn').addEventListener('click', async () => {
+  agentUrl = document.getElementById('agentUrl').value.trim().replace(/\/$/, '');
+  localStorage.setItem('solar_advisor_agent_url', agentUrl);
+  const btn = document.getElementById('agentConnectBtn');
+  btn.textContent = "Connecting…";
+  try{
+    const res = await fetch(agentUrl + '/health');
+    const data = await res.json();
+    if(data.ok && data.key_configured){
+      agentConnected = true;
+      document.getElementById('chatSetup').style.display = 'none';
+      document.getElementById('chatMessages').style.display = 'flex';
+      document.getElementById('chatInputRow').style.display = 'flex';
+      addChatBubble("Connected. Ask me anything about what's safe to run right now.", 'system-note');
+    } else if(data.ok){
+      btn.textContent = "Connect";
+      alert("Backend is reachable but ANTHROPIC_API_KEY isn't set on the server. Check the backend's .env file.");
+    }
+  }catch(e){
+    btn.textContent = "Connect";
+    alert("Couldn't reach the backend. Make sure it's running (see README → Agent backend) and the URL is correct.");
+  }
+});
+
+function addChatBubble(text, cls){
+  const msgs = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+  div.className = 'chat-msg ' + cls;
+  div.textContent = text;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+  return div;
+}
+
+function buildAgentContext(){
+  const logs = loadLogs().slice(0, 15);
+  return {
+    availableWatts: lastAvailable,
+    source: manualOverride ? 'manual override' : (document.getElementById('sourceTag').textContent.includes('satellite') ? 'satellite' : 'model'),
+    ageMin: null,
+    marginPct: state.config.margin,
+    inverterCap: state.config.inverterCap,
+    appliances: state.appliances.map(a => ({ name: a.name, watt: a.watt, active: a.active })),
+    recentLogs: logs.map(l => ({
+      time: l.time, predictedWatts: l.predictedWatts, activeLoad: l.activeLoad,
+      appliances: l.appliances, outcome: l.outcome, note: l.note || ''
+    })),
+  };
+}
+
+async function sendChatMessage(){
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if(!text || !agentConnected) return;
+  input.value = '';
+  addChatBubble(text, 'user');
+  const sendBtn = document.getElementById('chatSendBtn');
+  sendBtn.disabled = true;
+  const thinking = addChatBubble('…', 'assistant');
+
+  try{
+    const res = await fetch(agentUrl + '/chat', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        message: text,
+        history: chatHistory,
+        context: buildAgentContext(),
+      })
+    });
+    const data = await res.json();
+    thinking.remove();
+    if(data.reply){
+      addChatBubble(data.reply, 'assistant');
+      chatHistory.push({role:'user', content: text});
+      chatHistory.push({role:'assistant', content: data.reply});
+      if(chatHistory.length > 20) chatHistory = chatHistory.slice(-20);
+    } else {
+      addChatBubble("Something went wrong on the backend.", 'system-note');
+    }
+  }catch(e){
+    thinking.remove();
+    addChatBubble("Couldn't reach the backend — is it still running?", 'system-note');
+  }
+  sendBtn.disabled = false;
+}
+
+document.getElementById('chatSendBtn').addEventListener('click', sendChatMessage);
+document.getElementById('chatInput').addEventListener('keydown', (e) => {
+  if(e.key === 'Enter') sendChatMessage();
+});
+
 /* ---------- Init ---------- */
 renderAppliances();
 bindSettings();
+renderLogHistory();
 refresh();
 setInterval(refresh, 5*60*1000); // refresh every 5 min
 setInterval(() => {
