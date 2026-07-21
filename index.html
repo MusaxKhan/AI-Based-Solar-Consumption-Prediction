@@ -165,6 +165,32 @@
   }
   .install-banner button{background:var(--amber); color:#20160a; border:none; border-radius:7px; padding:7px 12px; font-weight:700; font-size:12px;}
 
+  /* ---- data source / override ---- */
+  .source-row{display:flex; align-items:center; justify-content:center; gap:8px; margin-top:12px; flex-wrap:wrap;}
+  .source-tag{
+    font-family:'IBM Plex Mono', monospace; font-size:10.5px; color:var(--faint);
+    display:flex; align-items:center; gap:5px;
+  }
+  .source-tag .src-dot{width:6px; height:6px; border-radius:50%;}
+  .src-satellite{background:#4dd0e1;}
+  .src-model{background:#f4c95d;}
+  .override-btn{
+    font-size:11.5px; font-weight:600; color:var(--warn); background:rgba(244,201,93,0.1);
+    border:1px solid rgba(244,201,93,0.3); border-radius:999px; padding:5px 12px; cursor:pointer;
+  }
+  .override-btn.active{color:var(--danger); background:rgba(255,107,107,0.12); border-color:rgba(255,107,107,0.35);}
+
+  /* ---- seasonal backtest ---- */
+  .seasonal-body{padding-bottom:16px;}
+  .seasonal-intro{font-size:12.5px; color:var(--muted); margin:0 0 12px; line-height:1.5;}
+  .load-btn{
+    background:var(--cyan); color:#0a2226; border:none; border-radius:8px; padding:9px 16px;
+    font-weight:700; font-size:13px; cursor:pointer;
+  }
+  .load-btn:disabled{opacity:0.5; cursor:default;}
+  #seasonalChartWrap{margin-top:14px;}
+  .month-readout{display:flex; justify-content:space-between; font-size:11px; color:var(--faint); margin-top:6px; font-family:'IBM Plex Mono',monospace;}
+
   @media (max-width:400px){
     .power-readout .num{font-size:36px;}
     .settings-grid{grid-template-columns:1fr;}
@@ -194,6 +220,11 @@
     <div class="hero-sub" id="heroSub">Fetching sky conditions…</div>
 
     <div class="weather-chips" id="weatherChips"></div>
+
+    <div class="source-row">
+      <span class="source-tag" id="sourceTag"><span class="src-dot src-satellite"></span>satellite</span>
+      <button class="override-btn" id="overrideBtn">Sky darker than this? Tap to override</button>
+    </div>
   </div>
 
   <div class="budget">
@@ -223,6 +254,22 @@
       <input type="number" name="watt" id="newWatt" placeholder="Watts">
       <button id="addBtn">Add</button>
     </div>
+  </section>
+
+  <section>
+    <details class="settings" id="seasonalPanel">
+      <summary>Seasonal outlook — winter vs. summer</summary>
+      <div class="seasonal-body">
+        <p class="seasonal-intro">
+          Pulls a full year of real historical weather for Wah Cantt (not someone else's
+          dataset) and runs it through the same model above, so you can see how much less
+          your NW-facing array makes in December fog vs. June sun — without waiting for
+          winter to arrive.
+        </p>
+        <button class="load-btn" id="loadSeasonalBtn">Load last 12 months</button>
+        <div id="seasonalChartWrap"></div>
+      </div>
+    </details>
   </section>
 
   <section>
@@ -361,29 +408,77 @@ function poaIrradiance(ghi, dni, dhi, sunEl, sunAz, panelTilt, panelAz){
   return directPOA + diffusePOA + groundRefl;
 }
 
-/* ---------- Weather fetch ---------- */
-async function fetchWeather(){
+/* ---------- Weather fetch ----------
+   Two sources:
+   1. Satellite Radiation API — real geostationary satellite observation (Himawari-9 over
+      this region), ~10-30 min old, actually "sees" the cloud/storm sitting over the array.
+      This is the primary source since it reflects reality, not a forecast.
+   2. Standard Forecast API — model-predicted irradiance + temperature/cloud context.
+      Used as a fallback if satellite data is unavailable, and for the temperature reading
+      (satellite API doesn't provide temperature).
+*/
+async function fetchSatellite(){
+  const url = `https://satellite-api.open-meteo.com/v1/archive?latitude=${LAT}&longitude=${LON}` +
+    `&hourly=shortwave_radiation_instant,direct_radiation_instant,diffuse_radiation_instant,direct_normal_irradiance_instant` +
+    `&models=satellite_radiation_seamless&temporal_resolution=native&timezone=auto`;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error("satellite fetch failed");
+  return res.json();
+}
+
+async function fetchForecast(){
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}` +
     `&hourly=shortwave_radiation,direct_normal_irradiance,diffuse_radiation,temperature_2m,cloud_cover` +
     `&current=temperature_2m,cloud_cover,shortwave_radiation,direct_normal_irradiance,diffuse_radiation` +
     `&timezone=auto`;
   const res = await fetch(url);
-  if(!res.ok) throw new Error("weather fetch failed");
+  if(!res.ok) throw new Error("forecast fetch failed");
   return res.json();
 }
 
-let weatherCache = null;
+// Pull the most recent non-future timestamp from a satellite hourly-array response.
+function latestSatelliteReading(sat){
+  const times = sat.hourly.time;
+  const now = Date.now();
+  let idx = -1;
+  for(let i=0;i<times.length;i++){
+    if(new Date(times[i]).getTime() <= now) idx = i; else break;
+  }
+  if(idx === -1) return null;
+  return {
+    time: times[idx],
+    ghi: sat.hourly.shortwave_radiation_instant?.[idx] ?? 0,
+    dni: sat.hourly.direct_normal_irradiance_instant?.[idx] ?? 0,
+    dhi: sat.hourly.diffuse_radiation_instant?.[idx] ?? 0,
+  };
+}
+
+let dataCache = { satellite: null, forecast: null, fetchedAt: 0 };
+let manualOverride = false;
+
+document.getElementById('overrideBtn').addEventListener('click', () => {
+  manualOverride = !manualOverride;
+  const btn = document.getElementById('overrideBtn');
+  btn.classList.toggle('active', manualOverride);
+  btn.textContent = manualOverride
+    ? "Overriding — tap to go back to auto"
+    : "Sky darker than this? Tap to override";
+  refresh();
+});
 
 async function refresh(){
   const now = new Date();
   document.getElementById('clock').textContent = now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
 
-  try{
-    if(!weatherCache || (Date.now() - weatherCache._fetchedAt) > 10*60*1000){
-      weatherCache = await fetchWeather();
-      weatherCache._fetchedAt = Date.now();
-    }
-  }catch(e){
+  const stale = (Date.now() - dataCache.fetchedAt) > 10*60*1000;
+  if(!dataCache.satellite || stale){
+    const [satResult, fcResult] = await Promise.allSettled([fetchSatellite(), fetchForecast()]);
+    dataCache.satellite = satResult.status === 'fulfilled' ? satResult.value : null;
+    dataCache.forecast = fcResult.status === 'fulfilled' ? fcResult.value : null;
+    dataCache.fetchedAt = Date.now();
+  }
+
+  if(!dataCache.satellite && !dataCache.forecast){
     document.getElementById('heroSub').textContent = "Couldn't reach weather service — check your connection.";
     document.getElementById('locLabel').textContent = "Wah Cantt · offline";
     renderSunArc(null, 0);
@@ -392,17 +487,28 @@ async function refresh(){
 
   document.getElementById('locLabel').textContent = "Wah Cantt · " + now.toLocaleDateString([], {month:'short', day:'numeric'});
 
-  const cur = weatherCache.current;
-  const ghi = cur.shortwave_radiation || 0;
-  const dni = cur.direct_normal_irradiance || 0;
-  const dhi = cur.diffuse_radiation || 0;
-  const temp = cur.temperature_2m;
-  const cloud = cur.cloud_cover;
+  let ghi, dni, dhi, source, ageMin = null;
+  const satReading = dataCache.satellite ? latestSatelliteReading(dataCache.satellite) : null;
+
+  if(satReading){
+    ghi = satReading.ghi; dni = satReading.dni; dhi = satReading.dhi;
+    source = 'satellite';
+    ageMin = Math.round((Date.now() - new Date(satReading.time).getTime())/60000);
+  } else if(dataCache.forecast){
+    const cur = dataCache.forecast.current;
+    ghi = cur.shortwave_radiation || 0; dni = cur.direct_normal_irradiance || 0; dhi = cur.diffuse_radiation || 0;
+    source = 'model';
+  } else {
+    ghi = dni = dhi = 0; source = 'model';
+  }
+
+  const temp = dataCache.forecast?.current?.temperature_2m ?? 25;
+  const cloud = dataCache.forecast?.current?.cloud_cover ?? null;
 
   const sun = getSunPosition(now, LAT, LON);
   const cfg = state.config;
 
-  const poa = poaIrradiance(ghi, dni, dhi, sun.elevation, sun.azimuth, cfg.tilt, cfg.azimuth);
+  let poa = poaIrradiance(ghi, dni, dhi, sun.elevation, sun.azimuth, cfg.tilt, cfg.azimuth);
 
   // cell temperature estimate (simple NOCT-ish model) and temp derate
   const cellTemp = temp + (poa/800)*25; // NOCT ~45C at 800W/m2, 20C ambient rise approx
@@ -412,15 +518,31 @@ async function refresh(){
   const systemDerate = cfg.derate/100;
 
   let availableWatts = (poa/1000) * stcWatts * Math.max(0.2, tempDerateFactor) * systemDerate;
+
+  if(manualOverride){
+    availableWatts *= 0.1; // assume near-zero generation until conditions clear
+  }
+
   availableWatts = Math.max(0, Math.round(availableWatts));
   availableWatts = Math.min(availableWatts, cfg.inverterCap);
 
   document.getElementById('availWatts').textContent = availableWatts.toLocaleString();
 
+  // data-source tag
+  const tag = document.getElementById('sourceTag');
+  if(manualOverride){
+    tag.innerHTML = `<span class="src-dot" style="background:var(--danger)"></span>manual override`;
+  } else if(source === 'satellite'){
+    tag.innerHTML = `<span class="src-dot src-satellite"></span>satellite · ${ageMin}m ago`;
+  } else {
+    tag.innerHTML = `<span class="src-dot src-model"></span>forecast model (satellite unavailable)`;
+  }
+
   let subMsg;
-  if(sun.elevation <= 0){ subMsg = "Sun is below the horizon — solar-only mode isn't viable."; }
-  else if(poa < 50){ subMsg = "Very low light — heavy cloud or early/late sun angle."; }
-  else { subMsg = `Sun at ${sun.elevation.toFixed(0)}° elevation · panel array facing NW loses some yield vs. direct sun.`; }
+  if(manualOverride){ subMsg = "Manual override active — assuming poor light until you switch back to auto."; }
+  else if(sun.elevation <= 0){ subMsg = "Sun is below the horizon — solar-only mode isn't viable."; }
+  else if(poa < 50){ subMsg = "Very low light right now — heavy cloud, rain, or early/late sun angle."; }
+  else { subMsg = `Sun at ${sun.elevation.toFixed(0)}° elevation · panel array loses some yield vs. facing due south.`; }
   document.getElementById('heroSub').textContent = subMsg;
 
   renderChips(cloud, temp, poa);
@@ -587,6 +709,103 @@ document.getElementById('addBtn').addEventListener('click', () => {
   saveState(); renderAppliances(); recomputeBudget();
   nameEl.value = ''; wattEl.value = '';
 });
+
+/* ---------- Seasonal backtest ----------
+   Uses Open-Meteo's free Historical Weather API (ERA5 reanalysis) for these exact
+   coordinates — real Wah Cantt weather, not a foreign dataset — to show how available
+   watts would have looked across a full year, including winter fog and monsoon cloud.
+*/
+async function fetchHistoricalYear(){
+  const end = new Date();
+  end.setDate(end.getDate() - 6); // ERA5 archive has ~5 day processing delay
+  const start = new Date(end);
+  start.setFullYear(start.getFullYear() - 1);
+  const fmt = d => d.toISOString().slice(0,10);
+
+  const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${LAT}&longitude=${LON}` +
+    `&start_date=${fmt(start)}&end_date=${fmt(end)}` +
+    `&hourly=shortwave_radiation,direct_normal_irradiance,diffuse_radiation,temperature_2m` +
+    `&timezone=auto`;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error("historical fetch failed");
+  return res.json();
+}
+
+document.getElementById('loadSeasonalBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('loadSeasonalBtn');
+  const wrap = document.getElementById('seasonalChartWrap');
+  btn.disabled = true;
+  btn.textContent = "Loading a year of Wah Cantt weather…";
+  wrap.innerHTML = '';
+  try{
+    const data = await fetchHistoricalYear();
+    const cfg = state.config;
+    const times = data.hourly.time;
+    const ghiArr = data.hourly.shortwave_radiation;
+    const dniArr = data.hourly.direct_normal_irradiance;
+    const dhiArr = data.hourly.diffuse_radiation;
+    const tempArr = data.hourly.temperature_2m;
+
+    // monthly midday (11:00-14:00 local) average available watts
+    const monthlySum = new Array(12).fill(0);
+    const monthlyCount = new Array(12).fill(0);
+
+    for(let i=0;i<times.length;i++){
+      const dt = new Date(times[i]);
+      const hour = dt.getHours();
+      if(hour < 11 || hour > 14) continue; // peak usable window only
+
+      const sun = getSunPosition(dt, LAT, LON);
+      const poa = poaIrradiance(ghiArr[i]||0, dniArr[i]||0, dhiArr[i]||0, sun.elevation, sun.azimuth, cfg.tilt, cfg.azimuth);
+      const temp = tempArr[i] ?? 25;
+      const cellTemp = temp + (poa/800)*25;
+      const tempDerateFactor = 1 - Math.max(0, (cellTemp - 25))*0.004;
+      const stcWatts = cfg.panelCount * cfg.panelWatt;
+      let watts = (poa/1000) * stcWatts * Math.max(0.2, tempDerateFactor) * (cfg.derate/100);
+      watts = Math.min(watts, cfg.inverterCap);
+
+      const m = dt.getMonth();
+      monthlySum[m] += watts;
+      monthlyCount[m] += 1;
+    }
+
+    const monthlyAvg = monthlySum.map((s,i) => monthlyCount[i] ? s/monthlyCount[i] : 0);
+    renderSeasonalChart(monthlyAvg);
+    btn.textContent = "Reload";
+    btn.disabled = false;
+  }catch(e){
+    wrap.innerHTML = `<p style="color:var(--danger); font-size:12.5px;">Couldn't load historical data — check your connection and try again.</p>`;
+    btn.textContent = "Load last 12 months";
+    btn.disabled = false;
+  }
+});
+
+function renderSeasonalChart(monthlyAvg){
+  const wrap = document.getElementById('seasonalChartWrap');
+  const labels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const max = Math.max(...monthlyAvg, 1);
+  const w = 320, h = 130, barW = 20, gap = 6, baseY = 110;
+  let bars = '';
+  monthlyAvg.forEach((v,i) => {
+    const barH = (v/max) * 90;
+    const x = 10 + i*(barW+gap);
+    const y = baseY - barH;
+    const isWinter = [11,0,1].includes(i);
+    bars += `<rect x="${x}" y="${y}" width="${barW}" height="${barH}" rx="3" fill="${isWinter ? '#4dd0e1' : '#ffb84d'}" opacity="0.9"/>`;
+    bars += `<text x="${x+barW/2}" y="${baseY+14}" font-size="8.5" fill="#5b6672" text-anchor="middle" font-family="IBM Plex Mono, monospace">${labels[i]}</text>`;
+  });
+
+  wrap.innerHTML = `
+    <svg viewBox="0 0 ${w} ${h}" style="width:100%; height:auto;">
+      <line x1="8" y1="${baseY}" x2="${w-8}" y2="${baseY}" stroke="#2a3742" stroke-width="1"/>
+      ${bars}
+    </svg>
+    <div class="month-readout">
+      <span>Winter (cyan) midday avg: ${Math.round((monthlyAvg[11]+monthlyAvg[0]+monthlyAvg[1])/3)} W</span>
+      <span>Summer (amber) midday avg: ${Math.round((monthlyAvg[5]+monthlyAvg[6]+monthlyAvg[7])/3)} W</span>
+    </div>
+  `;
+}
 
 /* ---------- PWA install prompt ---------- */
 let deferredPrompt;
