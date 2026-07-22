@@ -723,18 +723,29 @@ async function fetchForecast(){
 // Pull the most recent non-future timestamp from a satellite hourly-array response.
 function latestSatelliteReading(sat){
   const times = sat.hourly.time;
+  const ghiArr = sat.hourly.shortwave_radiation_instant;
+  const dniArr = sat.hourly.direct_normal_irradiance_instant;
+  const dhiArr = sat.hourly.diffuse_radiation_instant;
   const now = Date.now();
-  let idx = -1;
-  for(let i=0;i<times.length;i++){
-    if(new Date(times[i]).getTime() <= now) idx = i; else break;
+
+  // Walk backward from "now" looking for the most recent slot that's actually been
+  // processed. The satellite pipeline often lags well behind the timestamp grid itself —
+  // the newest few slots frequently exist with a time but null radiation values because
+  // they haven't been computed yet. Treating null as 0 (rather than "not ready, keep
+  // looking") is what previously caused false "0W available" readings in broad daylight.
+  for(let i = times.length - 1; i >= 0; i--){
+    const t = new Date(times[i]).getTime();
+    if(t > now) continue; // future slot, skip
+    const ghi = ghiArr?.[i];
+    if(ghi === null || ghi === undefined) continue; // not processed yet — look further back
+    return {
+      time: times[i],
+      ghi: ghi,
+      dni: dniArr?.[i] ?? 0,
+      dhi: dhiArr?.[i] ?? 0,
+    };
   }
-  if(idx === -1) return null;
-  return {
-    time: times[idx],
-    ghi: sat.hourly.shortwave_radiation_instant?.[idx] ?? 0,
-    dni: sat.hourly.direct_normal_irradiance_instant?.[idx] ?? 0,
-    dhi: sat.hourly.diffuse_radiation_instant?.[idx] ?? 0,
-  };
+  return null; // nothing usable found — caller falls back to the forecast model
 }
 
 let dataCache = { satellite: null, forecast: null, fetchedAt: 0 };
