@@ -7,6 +7,7 @@
 <meta name="theme-color" content="#12181f">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="apple-touch-icon" href="icon-192.png">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
@@ -294,6 +295,66 @@
   }
   .chat-setup button{margin-top:10px; background:var(--cyan); color:#0a2226; border:none; border-radius:7px; padding:8px 14px; font-weight:700; font-size:12.5px; cursor:pointer;}
 
+  /* ---- personal model ---- */
+  .model-card{
+    background:var(--surface); border:1px solid var(--line); border-radius:12px;
+    padding:14px 15px; margin-top:10px;
+  }
+  .model-status-row{display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;}
+  .model-status-row .ms-label{font-size:13px; font-weight:700;}
+  .model-status-row .ms-badge{
+    font-size:10.5px; font-weight:700; padding:3px 9px; border-radius:999px;
+    font-family:'IBM Plex Mono',monospace;
+  }
+  .ms-badge.untrained{color:var(--faint); background:var(--bg);}
+  .ms-badge.trained{color:var(--cyan); background:rgba(77,208,225,0.12);}
+  .model-detail{font-size:12px; color:var(--muted); line-height:1.6;}
+  .model-progress-track{height:6px; border-radius:4px; background:var(--bg); border:1px solid var(--line); margin-top:8px; overflow:hidden;}
+  .model-progress-fill{height:100%; background:var(--cyan); border-radius:3px; transition:width .3s;}
+  .risk-line{
+    margin-top:10px; font-size:12.5px; padding:9px 11px; border-radius:8px;
+    background:rgba(255,184,77,0.08); border:1px solid rgba(255,184,77,0.2); color:var(--warn);
+    display:none;
+  }
+  .risk-line.show{display:block;}
+
+  /* ---- auth gate ---- */
+  .wrap, .chat-fab, .chat-panel{display:none;}
+  body.app-ready .wrap{display:block;}
+  body.app-ready .chat-fab{display:flex;}
+  #gateOverlay{
+    position:fixed; inset:0; z-index:100; background:var(--bg);
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  body.app-ready #gateOverlay{display:none;}
+  .gate-card{
+    width:100%; max-width:380px; background:var(--surface); border:1px solid var(--line);
+    border-radius:16px; padding:26px 24px;
+  }
+  .gate-card h2{font-family:'Sora',sans-serif; font-size:19px; margin:0 0 6px;}
+  .gate-card .gate-sub{font-size:12.5px; color:var(--muted); line-height:1.55; margin:0 0 18px;}
+  .gate-field{display:flex; flex-direction:column; gap:5px; margin-bottom:12px;}
+  .gate-field label{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.06em;}
+  .gate-field input{
+    background:var(--bg); border:1px solid var(--line); border-radius:8px; color:var(--text);
+    padding:10px 11px; font-size:13.5px; font-family:'Inter',sans-serif;
+  }
+  .gate-btn{
+    width:100%; background:var(--amber); color:#20160a; border:none; border-radius:9px;
+    padding:11px; font-weight:700; font-size:13.5px; cursor:pointer; margin-top:4px;
+  }
+  .gate-btn.secondary{background:var(--cyan); color:#0a2226;}
+  .gate-btn.ghost{background:none; border:1px solid var(--line); color:var(--muted); margin-top:8px;}
+  .gate-link{
+    display:block; text-align:center; font-size:12px; color:var(--faint); margin-top:14px;
+    cursor:pointer; text-decoration:underline;
+  }
+  .gate-error{font-size:12px; color:var(--danger); margin:8px 0 0; min-height:0;}
+  .gate-switch{font-size:12.5px; color:var(--muted); text-align:center; margin-top:16px;}
+  .gate-switch a{color:var(--cyan); cursor:pointer; text-decoration:underline;}
+  #gateOverlay .gate-step{display:none;}
+  #gateOverlay .gate-step.active{display:block;}
+
   @media (max-width:400px){
     .power-readout .num{font-size:36px;}
     .settings-grid{grid-template-columns:1fr;}
@@ -301,6 +362,52 @@
 </style>
 </head>
 <body>
+
+<div id="gateOverlay">
+  <div class="gate-card">
+
+    <div class="gate-step active" id="gateStepIntro">
+      <h2>One model, every device</h2>
+      <p class="gate-sub">Sync your settings, appliance list, test logs, and trained risk model across your phone and PC. Free, and it's your own private data.</p>
+      <button class="gate-btn" id="gateStartSetup">Set up sync</button>
+      <button class="gate-btn ghost" id="gateSkipCloud">Skip — use this device only</button>
+    </div>
+
+    <div class="gate-step" id="gateStepSetup">
+      <h2>Connect your Supabase project</h2>
+      <p class="gate-sub">One-time setup. Create a free project at supabase.com, then paste its URL and public anon key below — see README → "Cross-device sync" for exact steps.</p>
+      <div class="gate-field">
+        <label>Supabase URL</label>
+        <input type="text" id="gateSbUrl" placeholder="https://xxxxx.supabase.co">
+      </div>
+      <div class="gate-field">
+        <label>Supabase anon key</label>
+        <input type="text" id="gateSbKey" placeholder="eyJhbGciOi...">
+      </div>
+      <button class="gate-btn secondary" id="gateSaveSetup">Continue</button>
+      <span class="gate-link" id="gateBackFromSetup">← back</span>
+    </div>
+
+    <div class="gate-step" id="gateStepAuth">
+      <h2 id="gateAuthTitle">Log in</h2>
+      <p class="gate-sub">Same account works on any device — log in on your phone with the same email to see the same data.</p>
+      <div class="gate-field">
+        <label>Email</label>
+        <input type="email" id="gateEmail" placeholder="you@example.com">
+      </div>
+      <div class="gate-field">
+        <label>Password</label>
+        <input type="password" id="gatePassword" placeholder="At least 6 characters">
+      </div>
+      <button class="gate-btn" id="gateAuthSubmit">Log in</button>
+      <p class="gate-error" id="gateError"></p>
+      <p class="gate-switch"><span id="gateSwitchQuestion">Don't have an account? </span><a id="gateToggleMode">Sign up</a></p>
+      <span class="gate-link" id="gateForgetSetup">← use a different Supabase project</span>
+    </div>
+
+  </div>
+</div>
+
 <div class="wrap">
 
   <header class="top">
@@ -346,6 +453,8 @@
     <span id="statusText">Add appliances below to see what's safe to run.</span>
   </div>
 
+  <div class="risk-line" id="riskLine"></div>
+
   <section>
     <div class="sec-head">
       <h2>Appliances</h2>
@@ -364,6 +473,17 @@
     <div class="sec-head">
       <h2>Test history</h2>
       <span class="hint" id="logCount">0 entries</span>
+    </div>
+    <div class="model-card">
+      <div class="model-status-row">
+        <span class="ms-label">Personal risk model</span>
+        <span class="ms-badge untrained" id="modelBadge">untrained</span>
+      </div>
+      <div class="model-detail" id="modelDetail">
+        Retrains automatically every time you log a test. Needs at least 6 logs, with
+        both a "held" and a "tripped/flickered" example, before it can learn anything.
+      </div>
+      <div class="model-progress-track"><div class="model-progress-fill" id="modelProgressFill" style="width:0%;"></div></div>
     </div>
     <div id="logHistoryList"><div class="log-empty">No tests logged yet — use the button above after you try something.</div></div>
     <div class="log-export-row">
@@ -441,6 +561,17 @@
     </details>
   </section>
 
+  <section>
+    <details class="settings" id="accountPanel">
+      <summary>Account & sync</summary>
+      <div class="seasonal-body">
+        <p class="seasonal-intro" id="accountStatus">Not connected to cloud sync.</p>
+        <button class="load-btn" id="setupSyncBtn" style="display:none;">Set up cloud sync</button>
+        <button class="load-btn" id="signOutBtn" style="display:none;">Sign out</button>
+      </div>
+    </details>
+  </section>
+
   <div class="install-banner" id="installBanner">
     <span>Install this on your home screen for one-tap access.</span>
     <button id="installBtn">Install</button>
@@ -514,6 +645,7 @@ function loadState(){
 }
 function saveState(){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  schedulePush(); // no-op if cloud sync isn't set up — safe either way
 }
 
 let state = loadState();
@@ -700,7 +832,11 @@ async function refresh(){
   renderChips(cloud, temp, poa);
   renderSunArc(sun, poa > 20 ? 1 : 0);
   updateBudget(availableWatts);
+
+  lastReading = { poa, temp, cloud, source, hour: now.getHours(), sunElevation: sun.elevation };
 }
+
+let lastReading = {};
 
 function renderChips(cloud, temp, poa){
   const chips = document.getElementById('weatherChips');
@@ -832,6 +968,8 @@ function recomputeBudget(){
     text.textContent = `Over budget by ${Math.round(activeLoad-lastAvailable)} W — inverter will likely cut out. Turn something off.`;
     banner.querySelector('.icon').textContent = '⛔';
   }
+
+  updateRiskLine();
 }
 
 /* ---------- Settings binding ---------- */
@@ -965,7 +1103,7 @@ function renderSeasonalChart(monthlyAvg){
 */
 const LOG_KEY = "solar_advisor_logs_v1";
 function loadLogs(){ try{ return JSON.parse(localStorage.getItem(LOG_KEY)) || []; }catch(e){ return []; } }
-function saveLogs(logs){ localStorage.setItem(LOG_KEY, JSON.stringify(logs)); }
+function saveLogs(logs){ localStorage.setItem(LOG_KEY, JSON.stringify(logs)); schedulePush(); }
 
 let pendingSnapshot = null;
 let selectedOutcome = null;
@@ -979,6 +1117,11 @@ document.getElementById('openLogBtn').addEventListener('click', () => {
     appliances: activeApp.map(a=>a.name).join(', ') || '(none)',
     azimuth: state.config.azimuth,
     tilt: state.config.tilt,
+    poa: lastReading.poa ?? null,
+    temp: lastReading.temp ?? null,
+    cloud: lastReading.cloud ?? null,
+    hour: lastReading.hour ?? new Date().getHours(),
+    source: lastReading.source ?? 'unknown',
   };
   document.getElementById('modalSnapshot').innerHTML =
     `Predicted available: <b style="color:var(--text)">${pendingSnapshot.predictedWatts} W</b><br>` +
@@ -1015,6 +1158,8 @@ document.getElementById('saveLogBtn').addEventListener('click', () => {
   saveLogs(logs);
   document.getElementById('logModal').classList.remove('open');
   renderLogHistory();
+  retrainModel();       // <-- auto-retrain happens right here, every save
+  updateRiskLine();
 });
 
 function renderLogHistory(){
@@ -1042,7 +1187,7 @@ function renderLogHistory(){
 document.getElementById('exportCsvBtn').addEventListener('click', () => {
   const logs = loadLogs();
   if(logs.length === 0) return;
-  const headers = ['time','predictedWatts','activeLoad','appliances','azimuth','tilt','outcome','note'];
+  const headers = ['time','predictedWatts','activeLoad','appliances','azimuth','tilt','poa','temp','cloud','hour','source','outcome','note'];
   const rows = logs.map(l => headers.map(h => `"${String(l[h]??'').replace(/"/g,'""')}"`).join(','));
   const csv = headers.join(',') + '\n' + rows.join('\n');
   downloadBlob(csv, 'solar-advisor-logs.csv', 'text/csv');
@@ -1061,6 +1206,125 @@ function downloadBlob(content, filename, type){
   a.href = url; a.download = filename;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+/* ---------- Personal risk model (auto-trains on your logs) ----------
+   A tiny logistic regression, trained entirely in the browser — no server, no
+   Python, no dependency. It doesn't predict wattage (we have no ground-truth
+   generation meter for that without the dongle); instead it learns to predict
+   trip risk directly from your own logged outcomes, which is something the
+   physics formula structurally can't do — e.g. "AC trips more than the model
+   thinks whenever temp is above 38°C," a pattern only your own data reveals.
+
+   This is deliberately advisory, not authoritative: it never loosens the
+   static safety margin, only ever adds an extra warning on top of it. With a
+   handful of data points a model like this can easily be wrong — the
+   deterministic rule stays the primary safety check.
+*/
+const MODEL_KEY = "solar_advisor_model_v1";
+const MIN_TRAINING_LOGS = 6;
+
+function featuresFromLog(l){
+  // ratio of drawn load to what the physics model predicted was available
+  const ratio = l.predictedWatts > 0 ? l.activeLoad / l.predictedWatts : (l.activeLoad > 0 ? 2 : 0);
+  const poa = (l.poa ?? 300) / 1000;               // normalize roughly to 0-1
+  const temp = ((l.temp ?? 25) - 20) / 20;          // centered, scaled
+  const hourSin = Math.sin((l.hour ?? 12) / 24 * 2 * Math.PI);
+  const hourCos = Math.cos((l.hour ?? 12) / 24 * 2 * Math.PI);
+  return [1, ratio, poa, temp, hourSin, hourCos];   // bias term first
+}
+
+function labelFromOutcome(outcome){
+  // treat "flicker" as a risky/near-miss outcome, grouped with "tripped"
+  return (outcome === 'tripped' || outcome === 'flicker') ? 1 : 0;
+}
+
+function sigmoid(z){ return 1/(1+Math.exp(-z)); }
+
+function trainLogisticRegression(logs){
+  const X = logs.map(featuresFromLog);
+  const y = logs.map(l => labelFromOutcome(l.outcome));
+  const nFeat = X[0].length;
+  let w = new Array(nFeat).fill(0);
+  const lr = 0.15, l2 = 0.05, epochs = 400;
+  const n = X.length;
+
+  for(let e=0; e<epochs; e++){
+    const grad = new Array(nFeat).fill(0);
+    for(let i=0;i<n;i++){
+      const pred = sigmoid(X[i].reduce((s,x,j)=>s+x*w[j],0));
+      const err = pred - y[i];
+      for(let j=0;j<nFeat;j++) grad[j] += err * X[i][j];
+    }
+    for(let j=0;j<nFeat;j++){
+      w[j] -= lr * (grad[j]/n + l2*w[j]);
+    }
+  }
+  return w;
+}
+
+function retrainModel(){
+  const logs = loadLogs();
+  const positives = logs.filter(l => labelFromOutcome(l.outcome) === 1).length;
+  const negatives = logs.length - positives;
+
+  const badge = document.getElementById('modelBadge');
+  const detail = document.getElementById('modelDetail');
+  const fill = document.getElementById('modelProgressFill');
+
+  if(logs.length < MIN_TRAINING_LOGS || positives === 0 || negatives === 0){
+    localStorage.removeItem(MODEL_KEY);
+    schedulePush();
+    badge.textContent = 'untrained';
+    badge.className = 'ms-badge untrained';
+    const needed = Math.max(0, MIN_TRAINING_LOGS - logs.length);
+    detail.textContent = positives === 0 || (negatives === 0 && logs.length>0)
+      ? `Has ${logs.length} log(s), but needs at least one "held" AND one "tripped/flickered" example to learn a pattern.`
+      : `Needs ${needed} more logged test(s) (${logs.length}/${MIN_TRAINING_LOGS}) before it can train.`;
+    fill.style.width = Math.min(100, (logs.length/MIN_TRAINING_LOGS)*100) + '%';
+    return null;
+  }
+
+  const weights = trainLogisticRegression(logs);
+  const model = { weights, n: logs.length, positives, negatives, trainedAt: new Date().toISOString() };
+  localStorage.setItem(MODEL_KEY, JSON.stringify(model));
+  schedulePush();
+
+  badge.textContent = 'trained';
+  badge.className = 'ms-badge trained';
+  detail.textContent = `Trained on ${logs.length} logs (${positives} risky, ${negatives} clean). Retrains automatically with every new entry.`;
+  fill.style.width = '100%';
+  return model;
+}
+
+function loadModel(){
+  try{ return JSON.parse(localStorage.getItem(MODEL_KEY)); }catch(e){ return null; }
+}
+
+function predictCurrentRisk(){
+  const model = loadModel();
+  if(!model) return null;
+  const activeLoad = state.appliances.filter(a=>a.active).reduce((s,a)=>s+a.watt,0);
+  if(activeLoad === 0) return null;
+  const feat = featuresFromLog({
+    predictedWatts: lastAvailable, activeLoad,
+    poa: lastReading.poa, temp: lastReading.temp, hour: lastReading.hour,
+  });
+  const p = sigmoid(feat.reduce((s,x,j)=>s+x*model.weights[j],0));
+  return { probability: p, n: model.n };
+}
+
+function updateRiskLine(){
+  const risk = predictCurrentRisk();
+  const line = document.getElementById('riskLine');
+  if(!risk || risk.probability < 0.35){
+    line.classList.remove('show');
+    return;
+  }
+  line.classList.add('show');
+  line.textContent = `⚡ Personal model: based on ${risk.n} of your own past tests, this specific ` +
+    `load has looked risky before (~${Math.round(risk.probability*100)}% estimated trip chance) — ` +
+    `even though the physics estimate above says it fits.`;
 }
 
 /* ---------- PWA install prompt ---------- */
@@ -1185,20 +1449,218 @@ async function sendChatMessage(){
   sendBtn.disabled = false;
 }
 
-document.getElementById('chatSendBtn').addEventListener('click', sendChatMessage);
-document.getElementById('chatInput').addEventListener('keydown', (e) => {
-  if(e.key === 'Enter') sendChatMessage();
+/* ---------- Account & cloud sync (Supabase) ----------
+   State stays local-first: localStorage remains the thing every existing
+   function reads/writes (loadState/saveState/loadLogs/saveLogs/loadModel),
+   so none of that code needed to change. Cloud sync just mirrors it: pull
+   down on login, push up (debounced) after every local save. One row per
+   user in a `user_state` table, gated by Supabase Row Level Security so you
+   can only ever see your own row. See README for the one-time setup.
+*/
+const CLOUD_CFG_KEY = "solar_advisor_cloud_cfg_v1";
+const SKIP_CLOUD_KEY = "solar_advisor_skip_cloud_v1";
+
+let supabaseClient = null;
+let currentUser = null;
+let cloudEnabled = false;
+let authMode = 'login';
+
+function getCloudConfig(){ try{ return JSON.parse(localStorage.getItem(CLOUD_CFG_KEY)); }catch(e){ return null; } }
+function setCloudConfig(cfg){ localStorage.setItem(CLOUD_CFG_KEY, JSON.stringify(cfg)); }
+
+function initSupabase(){
+  const cfg = getCloudConfig();
+  if(!cfg) return false;
+  const { createClient } = window.supabase; // global UMD export from the CDN script
+  supabaseClient = createClient(cfg.url, cfg.key);
+  return true;
+}
+
+function showGateStep(id){
+  document.querySelectorAll('.gate-step').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+document.getElementById('gateStartSetup').addEventListener('click', () => showGateStep('gateStepSetup'));
+document.getElementById('gateBackFromSetup').addEventListener('click', () => showGateStep('gateStepIntro'));
+document.getElementById('gateForgetSetup').addEventListener('click', () => {
+  localStorage.removeItem(CLOUD_CFG_KEY);
+  showGateStep('gateStepIntro');
+});
+document.getElementById('gateSkipCloud').addEventListener('click', () => {
+  localStorage.setItem(SKIP_CLOUD_KEY, '1');
+  enterApp();
 });
 
-/* ---------- Init ---------- */
-renderAppliances();
-bindSettings();
-renderLogHistory();
-refresh();
-setInterval(refresh, 5*60*1000); // refresh every 5 min
-setInterval(() => {
-  document.getElementById('clock').textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-}, 30*1000);
+document.getElementById('gateSaveSetup').addEventListener('click', () => {
+  const url = document.getElementById('gateSbUrl').value.trim();
+  const key = document.getElementById('gateSbKey').value.trim();
+  if(!url || !key) return;
+  setCloudConfig({ url, key });
+  initSupabase();
+  showGateStep('gateStepAuth');
+});
+
+document.getElementById('gateToggleMode').addEventListener('click', () => {
+  authMode = authMode === 'login' ? 'signup' : 'login';
+  document.getElementById('gateAuthTitle').textContent = authMode === 'login' ? 'Log in' : 'Sign up';
+  document.getElementById('gateAuthSubmit').textContent = authMode === 'login' ? 'Log in' : 'Sign up';
+  document.getElementById('gateSwitchQuestion').textContent = authMode === 'login' ? "Don't have an account? " : 'Already have an account? ';
+  document.getElementById('gateToggleMode').textContent = authMode === 'login' ? 'Sign up' : 'Log in';
+  document.getElementById('gateError').textContent = '';
+});
+
+document.getElementById('gateAuthSubmit').addEventListener('click', async () => {
+  const email = document.getElementById('gateEmail').value.trim();
+  const password = document.getElementById('gatePassword').value;
+  const errEl = document.getElementById('gateError');
+  errEl.style.color = 'var(--danger)';
+  errEl.textContent = '';
+  if(!email || password.length < 6){
+    errEl.textContent = 'Enter a valid email and a password of at least 6 characters.';
+    return;
+  }
+  const btn = document.getElementById('gateAuthSubmit');
+  btn.disabled = true; btn.textContent = 'Please wait…';
+
+  try{
+    if(authMode === 'signup'){
+      const { data, error } = await supabaseClient.auth.signUp({ email, password });
+      if(error) throw error;
+      if(!data.session){
+        errEl.style.color = 'var(--cyan)';
+        errEl.textContent = 'Account created — check your email to confirm, then log in.';
+        document.getElementById('gateToggleMode').click(); // flip back to login mode
+        btn.disabled = false; btn.textContent = 'Log in';
+        return;
+      }
+      currentUser = data.session.user;
+    } else {
+      const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+      if(error) throw error;
+      currentUser = data.session.user;
+    }
+    cloudEnabled = true;
+    await loadCloudState();
+    enterApp();
+  }catch(e){
+    errEl.textContent = e.message || 'Something went wrong.';
+    btn.disabled = false; btn.textContent = authMode === 'login' ? 'Log in' : 'Sign up';
+  }
+});
+
+document.getElementById('setupSyncBtn').addEventListener('click', () => {
+  document.body.classList.remove('app-ready');
+  localStorage.removeItem(SKIP_CLOUD_KEY);
+  showGateStep(getCloudConfig() ? 'gateStepAuth' : 'gateStepIntro');
+});
+
+document.getElementById('signOutBtn').addEventListener('click', async () => {
+  if(supabaseClient) await supabaseClient.auth.signOut();
+  location.reload();
+});
+
+async function loadCloudState(){
+  const { data, error } = await supabaseClient
+    .from('user_state')
+    .select('*')
+    .eq('user_id', currentUser.id)
+    .maybeSingle();
+  if(error){ console.error('cloud load failed', error); return; }
+
+  if(data){
+    if(data.config) state.config = { ...state.config, ...data.config };
+    if(data.appliances) state.appliances = data.appliances;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    if(data.logs) localStorage.setItem(LOG_KEY, JSON.stringify(data.logs));
+    if(data.model) localStorage.setItem(MODEL_KEY, JSON.stringify(data.model));
+    else localStorage.removeItem(MODEL_KEY);
+  } else {
+    await pushCloudState(); // first login for this account — seed the row with local defaults
+  }
+}
+
+let pushTimer = null;
+function schedulePush(){
+  if(!cloudEnabled) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(pushCloudState, 800);
+}
+
+async function pushCloudState(){
+  if(!cloudEnabled || !supabaseClient || !currentUser) return;
+  const payload = {
+    user_id: currentUser.id,
+    config: state.config,
+    appliances: state.appliances,
+    logs: loadLogs(),
+    model: loadModel(),
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await supabaseClient.from('user_state').upsert(payload);
+  if(error) console.error('cloud sync failed', error);
+}
+
+function updateAccountPanel(){
+  const status = document.getElementById('accountStatus');
+  const setupBtn = document.getElementById('setupSyncBtn');
+  const signOutBtn = document.getElementById('signOutBtn');
+  if(cloudEnabled && currentUser){
+    status.textContent = `Synced as ${currentUser.email}. Changes save to the cloud automatically — log in with this email on any other device to see the same data.`;
+    setupBtn.style.display = 'none';
+    signOutBtn.style.display = 'block';
+  } else {
+    status.textContent = "Using this device only — nothing is synced to other devices.";
+    setupBtn.style.display = 'block';
+    signOutBtn.style.display = 'none';
+  }
+}
+
+function enterApp(){
+  document.body.classList.add('app-ready');
+  initApp();
+}
+
+function initApp(){
+  renderAppliances();
+  bindSettings();
+  renderLogHistory();
+  retrainModel();
+  updateAccountPanel();
+  refresh();
+  setInterval(refresh, 5*60*1000);
+  setInterval(() => {
+    document.getElementById('clock').textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  }, 30*1000);
+}
+
+async function bootstrap(){
+  if(localStorage.getItem(SKIP_CLOUD_KEY) === '1'){
+    enterApp();
+    return;
+  }
+  const cfg = getCloudConfig();
+  if(!cfg){
+    showGateStep('gateStepIntro'); // wait for the person's choice
+    return;
+  }
+  initSupabase();
+  try{
+    const { data } = await supabaseClient.auth.getSession();
+    if(data.session){
+      currentUser = data.session.user;
+      cloudEnabled = true;
+      await loadCloudState();
+      enterApp();
+    } else {
+      showGateStep('gateStepAuth');
+    }
+  }catch(e){
+    showGateStep('gateStepAuth');
+  }
+}
+
+bootstrap();
 </script>
 </body>
 </html>

@@ -59,6 +59,34 @@ computed. The model's job is only to reason and explain in natural language. Thi
 the safety-critical part deterministic and the AI part genuinely useful, instead of asking
 an LLM to do something a calculator already does better.
 
+## Cross-device sync (accounts)
+
+By default the app works standalone on one device (data in `localStorage`). To use the
+same account — settings, appliances, test logs, and trained risk model — on both your
+phone and PC, set up free cloud sync via Supabase:
+
+1. Go to [supabase.com](https://supabase.com), sign up free, create a new project.
+2. In your project, open **SQL Editor → New query**, paste the contents of
+   `supabase_setup.sql` (included in this folder), and run it. This creates one table,
+   locked down with Row Level Security so you can only ever see your own data.
+3. Go to **Project Settings → API**. Copy the **Project URL** and the **anon public** key.
+4. Optional but recommended for solo use: **Authentication → Providers → Email** → turn
+   off "Confirm email", so signing up logs you in immediately instead of requiring an
+   email click.
+5. Open the app. On first launch you'll see a setup screen — tap **"Set up sync"**, paste
+   in the URL and anon key from step 3, then sign up with any email + password.
+6. On your other device, open the app, do the same setup with the **same** Supabase URL
+   and key, then **log in** (not sign up) with the same email/password — you'll see the
+   same appliances, logs, and trained model immediately.
+
+If you'd rather skip this entirely, tap **"Skip — use this device only"** on first launch;
+everything still works exactly as before, just local to that one device.
+
+Nothing about your solar setup — appliance list, logs, model — ever leaves Supabase's
+database except to sync between your own devices; the anon key is safe to have in the
+frontend by design (Supabase's Row Level Security is what actually protects the data, not
+the key being secret).
+
 ## Tuning it to match reality
 
 The **System settings** panel (bottom of the app) lets you adjust:
@@ -85,6 +113,7 @@ The **System settings** panel (bottom of the app) lets you adjust:
 - `manifest.json` — PWA metadata (name, icons, install behavior)
 - `sw.js` — service worker for offline app-shell caching
 - `icon-192.png`, `icon-512.png` — app icons
-- `agent-backend/` — optional FastAPI server for the chat feature
+- `supabase_setup.sql` — one-time SQL to run in Supabase for cross-device sync
+- `agent-backend/` — optional FastAPI server for the chat feature (runs on Ollama, free/local)
   - `main.py` — the agent: tool definitions, system prompt, chat endpoint
-  - `requirements.txt`, `.env.example`
+  - `requirements.txt`
