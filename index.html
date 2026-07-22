@@ -784,11 +784,13 @@ async function refresh(){
 
   let ghi, dni, dhi, source, ageMin = null;
   const satReading = dataCache.satellite ? latestSatelliteReading(dataCache.satellite) : null;
+  const satAgeMin = satReading ? Math.round((Date.now() - new Date(satReading.time).getTime())/60000) : null;
+  const SAT_MAX_AGE_MIN = 90; // beyond this, prefer the forecast model — sky conditions may have moved on
 
-  if(satReading){
+  if(satReading && satAgeMin <= SAT_MAX_AGE_MIN){
     ghi = satReading.ghi; dni = satReading.dni; dhi = satReading.dhi;
     source = 'satellite';
-    ageMin = Math.round((Date.now() - new Date(satReading.time).getTime())/60000);
+    ageMin = satAgeMin;
   } else if(dataCache.forecast){
     const cur = dataCache.forecast.current;
     ghi = cur.shortwave_radiation || 0; dni = cur.direct_normal_irradiance || 0; dhi = cur.diffuse_radiation || 0;
