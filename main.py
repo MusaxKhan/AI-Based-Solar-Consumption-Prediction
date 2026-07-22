@@ -1,34 +1,41 @@
 """
-Solar Advisor — Agent backend
+Solar Advisor — Agent backend (FREE / local version, runs on Ollama)
 
-A thin, stateless layer that lets you ask natural-language questions about your
-solar budget ("can I run the AC and washing machine right now?") and have Claude
-reason about it using REAL numbers computed by the frontend — not guesses.
+Same idea as before, but instead of calling Anthropic's paid API, this talks to
+Ollama — a free, open-source tool that runs an LLM entirely on your own PC.
+No API key, no internet dependency once the model is downloaded, no per-query
+cost, ever.
 
-Design principle: the LLM never invents wattage math. It calls a tool that does
-plain arithmetic against the exact data the frontend already computed (available
-watts from the physics model, your appliance list, your logged test history).
-The model's job is only to reason and explain in natural language — the safety-
-critical numbers stay deterministic.
+Design principle (unchanged): the LLM never invents wattage math. It calls a
+tool that does plain arithmetic against the exact data the frontend already
+computed. The model's job is only to reason and explain in natural language —
+the safety-critical numbers stay deterministic.
 
-Run:
+One-time setup:
+    1. Install Ollama: https://ollama.com/download  (free, all platforms)
+    2. Pull a tool-calling-capable model, e.g.:
+         ollama pull llama3.1
+       (llama3.1:8b needs ~5GB RAM/disk. If your PC is limited, try
+       `ollama pull qwen2.5:3b` instead — smaller and still supports tools —
+       and change MODEL below to match.)
+    3. Ollama runs its own local server automatically on http://localhost:11434
+       after install — nothing else to start for that part.
+
+Run this backend:
     pip install -r requirements.txt
-    export ANTHROPIC_API_KEY=sk-ant-...
     uvicorn main:app --reload --port 8787
 """
 
-import os
+import json
 from typing import Optional
 
+import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import anthropic
 
-app = FastAPI(title="Solar Advisor Agent")
+app = FastAPI(title="Solar Advisor Agent (Ollama / free)")
 
-# Allow the static frontend (served from anywhere — file://, localhost, or your
-# deployed Vercel/Netlify URL) to call this backend.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -36,11 +43,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
-MODEL = "claude-sonnet-4-6"
+OLLAMA_URL = "http://localhost:11434/api/chat"
+MODEL = "qwen2.5:3b"
 
 
-# ---------- Request/response schema ----------
+# ---------- Request/response schema (unchanged — frontend needs no updates) ----------
 
 class Appliance(BaseModel):
     name: str
@@ -59,7 +66,7 @@ class LogEntry(BaseModel):
 
 class ChatContext(BaseModel):
     availableWatts: float
-    source: str            # "satellite" | "model" | "manual override"
+    source: str
     ageMin: Optional[int] = None
     marginPct: float
     inverterCap: float
@@ -68,7 +75,7 @@ class ChatContext(BaseModel):
 
 
 class ChatMessage(BaseModel):
-    role: str  # "user" | "assistant"
+    role: str
     content: str
 
 
@@ -79,8 +86,6 @@ class ChatRequest(BaseModel):
 
 
 # ---------- Tool: deterministic appliance-fit check ----------
-# This is the only place wattage arithmetic happens. The model calls it; it never
-# computes the numbers itself.
 
 def check_combo(appliance_names: list[str], context: ChatContext) -> dict:
     by_name = {a.name.lower(): a for a in context.appliances}
@@ -90,7 +95,6 @@ def check_combo(appliance_names: list[str], context: ChatContext) -> dict:
         if hit:
             matched.append(hit)
         else:
-            # loose substring match as a fallback
             candidates = [a for a in context.appliances if n.lower() in a.name.lower()]
             if candidates:
                 matched.append(candidates[0])
@@ -130,42 +134,49 @@ def get_test_history(context: ChatContext, appliance_filter: Optional[str] = Non
     }
 
 
+# Ollama uses the same OpenAI-style function-calling schema.
 TOOLS = [
     {
-        "name": "check_combo",
-        "description": (
-            "Check whether a specific combination of appliances fits within the "
-            "current solar power budget. Always use this instead of doing the "
-            "arithmetic yourself — it uses the live, physics-model-derived available "
-            "wattage, not an assumption."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "appliance_names": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Names of appliances to check, e.g. ['AC', 'Fridge']",
-                }
+        "type": "function",
+        "function": {
+            "name": "check_combo",
+            "description": (
+                "Check whether a specific combination of appliances fits within the "
+                "current solar power budget. Always use this instead of doing the "
+                "arithmetic yourself — it uses the live, physics-model-derived available "
+                "wattage, not an assumption."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "appliance_names": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Names of appliances to check, e.g. ['AC', 'Fridge']",
+                    }
+                },
+                "required": ["appliance_names"],
             },
-            "required": ["appliance_names"],
         },
     },
     {
-        "name": "get_test_history",
-        "description": (
-            "Look up real logged outcomes from past tests on this system (whether the "
-            "inverter actually held or tripped for a given combination). Use this when "
-            "the person asks about reliability or past experience, not just the model's "
-            "prediction."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "appliance_filter": {
-                    "type": "string",
-                    "description": "Optional: filter logs to entries mentioning this appliance name",
-                }
+        "type": "function",
+        "function": {
+            "name": "get_test_history",
+            "description": (
+                "Look up real logged outcomes from past tests on this system (whether the "
+                "inverter actually held or tripped for a given combination). Use this when "
+                "the person asks about reliability or past experience, not just the model's "
+                "prediction."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "appliance_filter": {
+                        "type": "string",
+                        "description": "Optional: filter logs to entries mentioning this appliance name",
+                    }
+                },
             },
         },
     },
@@ -191,16 +202,22 @@ Don't invent weather details, exact percentages, or appliance wattages that were
 provided."""
 
 
+def call_ollama(messages: list[dict]) -> dict:
+    resp = requests.post(
+        OLLAMA_URL,
+        json={"model": MODEL, "messages": messages, "tools": TOOLS, "stream": False},
+        timeout=60,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
 @app.post("/chat")
 def chat(req: ChatRequest):
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise HTTPException(500, "ANTHROPIC_API_KEY not set on the server.")
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    for m in req.history:
+        messages.append({"role": m.role, "content": m.content})
 
-    messages = [{"role": m.role, "content": m.content} for m in req.history]
-    messages.append({"role": "user", "content": req.message})
-
-    # Give the model a compact snapshot of current state up front so it has context
-    # even before calling a tool.
     snapshot = (
         f"[Current state: {req.context.availableWatts}W available "
         f"(source: {req.context.source}"
@@ -210,42 +227,57 @@ def chat(req: ChatRequest):
         + ", ".join(f"{a.name} ({a.watt}W, {'on' if a.active else 'off'})" for a in req.context.appliances)
         + "]"
     )
-    messages[-1]["content"] = f"{snapshot}\n\n{req.message}"
+    messages.append({"role": "user", "content": f"{snapshot}\n\n{req.message}"})
 
-    for _ in range(4):  # cap tool-use loop
-        resp = client.messages.create(
-            model=MODEL,
-            max_tokens=600,
-            system=SYSTEM_PROMPT,
-            tools=TOOLS,
-            messages=messages,
+    try:
+        for _ in range(4):  # cap tool-use loop
+            data = call_ollama(messages)
+            msg = data.get("message", {})
+            tool_calls = msg.get("tool_calls")
+
+            if not tool_calls:
+                return {"reply": msg.get("content", "").strip() or "I'm not sure how to answer that."}
+
+            messages.append(msg)
+            for call in tool_calls:
+                fn = call["function"]["name"]
+                args = call["function"].get("arguments", {})
+                if isinstance(args, str):
+                    args = json.loads(args)
+
+                if fn == "check_combo":
+                    result = check_combo(args.get("appliance_names", []), req.context)
+                elif fn == "get_test_history":
+                    result = get_test_history(req.context, args.get("appliance_filter"))
+                else:
+                    result = {"error": f"unknown tool {fn}"}
+
+                messages.append({"role": "tool", "content": json.dumps(result)})
+
+        return {"reply": "Sorry, I got stuck reasoning about that — try rephrasing your question."}
+
+    except requests.exceptions.ConnectionError:
+        raise HTTPException(
+            502,
+            "Can't reach Ollama at localhost:11434 — make sure Ollama is installed and running "
+            "(it should start automatically after install; try running `ollama list` in a terminal "
+            "to check, or `ollama serve` to start it manually).",
         )
-
-        if resp.stop_reason != "tool_use":
-            final_text = "".join(b.text for b in resp.content if b.type == "text")
-            return {"reply": final_text}
-
-        messages.append({"role": "assistant", "content": resp.content})
-        tool_results = []
-        for block in resp.content:
-            if block.type != "tool_use":
-                continue
-            if block.name == "check_combo":
-                result = check_combo(block.input.get("appliance_names", []), req.context)
-            elif block.name == "get_test_history":
-                result = get_test_history(req.context, block.input.get("appliance_filter"))
-            else:
-                result = {"error": f"unknown tool {block.name}"}
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": block.id,
-                "content": str(result),
-            })
-        messages.append({"role": "user", "content": tool_results})
-
-    return {"reply": "Sorry, I got stuck reasoning about that — try rephrasing your question."}
 
 
 @app.get("/health")
 def health():
-    return {"ok": True, "key_configured": bool(os.environ.get("ANTHROPIC_API_KEY"))}
+    # Kept as "key_configured" so the existing frontend (which checks this exact field)
+    # doesn't need any changes — here it just means "Ollama is reachable and has the model."
+    try:
+        r = requests.get("http://localhost:11434/api/tags", timeout=3)
+        r.raise_for_status()
+        models = [m["name"] for m in r.json().get("models", [])]
+        model_ready = any(MODEL in m for m in models)
+        return {
+            "ok": True,
+            "key_configured": model_ready,
+            "detail": None if model_ready else f"Ollama is running but '{MODEL}' isn't pulled yet — run: ollama pull {MODEL}",
+        }
+    except requests.exceptions.RequestException:
+        return {"ok": False, "key_configured": False, "detail": "Ollama isn't running on localhost:11434"}
