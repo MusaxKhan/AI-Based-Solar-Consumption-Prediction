@@ -52,6 +52,7 @@ MODEL = "qwen2.5:3b"
 class Appliance(BaseModel):
     name: str
     watt: float
+    qty: float = 1
     active: bool
 
 
@@ -101,7 +102,7 @@ def check_combo(appliance_names: list[str], context: ChatContext) -> dict:
             else:
                 unmatched.append(n)
 
-    total = sum(a.watt for a in matched)
+    total = sum(a.watt * (a.qty or 1) for a in matched)
     safe_limit = context.availableWatts * (1 - context.marginPct / 100)
 
     if total == 0:
@@ -114,7 +115,10 @@ def check_combo(appliance_names: list[str], context: ChatContext) -> dict:
         verdict = "over_budget"
 
     return {
-        "matched_appliances": [{"name": a.name, "watt": a.watt} for a in matched],
+        "matched_appliances": [
+            {"name": a.name, "watt_each": a.watt, "qty": a.qty or 1, "watt_total": a.watt * (a.qty or 1)}
+            for a in matched
+        ],
         "unmatched_names": unmatched,
         "total_watts": total,
         "available_watts": context.availableWatts,
@@ -224,7 +228,10 @@ def chat(req: ChatRequest):
         + (f", {req.context.ageMin}m old" if req.context.ageMin is not None else "")
         + f"), inverter cap {req.context.inverterCap}W, safety margin "
         f"{req.context.marginPct}%. Known appliances: "
-        + ", ".join(f"{a.name} ({a.watt}W, {'on' if a.active else 'off'})" for a in req.context.appliances)
+        + ", ".join(
+            f"{a.name} ({a.watt}W each x{a.qty or 1} = {a.watt * (a.qty or 1):.0f}W, {'on' if a.active else 'off'})"
+            for a in req.context.appliances
+        )
         + "]"
     )
     messages.append({"role": "user", "content": f"{snapshot}\n\n{req.message}"})

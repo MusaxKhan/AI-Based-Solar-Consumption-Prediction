@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Solar Advisor — Wah Cantt</title>
+<title>Solar Advisor</title>
 <meta name="theme-color" content="#12181f">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png">
@@ -122,12 +122,13 @@
   }
   .appliance.active .toggle{background:var(--amber-dim); border-color:var(--amber);}
   .appliance.active .toggle::after{transform:translateX(16px); background:var(--amber);}
-  .appliance .info{flex:1; min-width:0;}
+  .appliance .info{flex:1; min-width:0; cursor:pointer; padding:2px 0;}
   .appliance .name{font-size:14.5px; font-weight:600;}
-  .appliance .watt-edit{font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--muted); border:none; background:transparent; width:70px; padding:0;}
-  .appliance .watt-edit:focus{color:var(--text); outline:none;}
+  .appliance .watt-sub{font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--muted); margin-top:2px;}
   .appliance .del{background:none; border:none; color:var(--faint); font-size:16px; cursor:pointer; padding:4px 6px; line-height:1;}
   .appliance .del:hover{color:var(--danger);}
+  .modal-delete{width:100%; margin-top:4px; background:none; border:1px solid var(--line); color:var(--danger); border-radius:9px; padding:11px; font-weight:700; font-size:13px; cursor:pointer;}
+  .modal-delete:hover{border-color:var(--danger);}
 
   .add-row{display:flex; gap:8px; margin-top:10px;}
   .add-row input{
@@ -136,6 +137,7 @@
   }
   .add-row input[name="name"]{flex:1;}
   .add-row input[name="watt"]{width:90px; font-family:'IBM Plex Mono',monospace;}
+  .add-row input[name="qty"]{width:56px; font-family:'IBM Plex Mono',monospace;}
   .add-row button{
     background:var(--amber); color:#20160a; border:none; border-radius:8px; padding:0 16px;
     font-weight:700; font-size:13px; cursor:pointer;
@@ -350,6 +352,11 @@
     cursor:pointer; text-decoration:underline;
   }
   .gate-error{font-size:12px; color:var(--danger); margin:8px 0 0; min-height:0;}
+  .gate-loc-result{
+    display:block; width:100%; text-align:left; background:var(--bg); border:1px solid var(--line);
+    color:var(--text); border-radius:8px; padding:9px 11px; font-size:13px; margin-top:6px; cursor:pointer;
+  }
+  .gate-loc-result:hover{border-color:var(--cyan);}
   .gate-switch{font-size:12.5px; color:var(--muted); text-align:center; margin-top:16px;}
   .gate-switch a{color:var(--cyan); cursor:pointer; text-decoration:underline;}
   #gateOverlay .gate-step{display:none;}
@@ -388,6 +395,20 @@
       <span class="gate-link" id="gateBackFromSetup">← back</span>
     </div>
 
+    <div class="gate-step" id="gateStepLocation">
+      <h2>Where's your system?</h2>
+      <p class="gate-sub">Sun position and live sky data are calculated for your exact spot on the map. Search your city, or use your device's location.</p>
+      <div class="gate-field">
+        <label>City or town</label>
+        <input type="text" id="gateLocSearch" placeholder="e.g. Lahore, Pakistan">
+      </div>
+      <button class="gate-btn secondary" id="gateLocSearchBtn">Search</button>
+      <button class="gate-btn ghost" id="gateLocGeoBtn">📍 Use my current location</button>
+      <div id="gateLocResults"></div>
+      <p class="gate-error" id="gateLocError"></p>
+      <span class="gate-link" id="gateLocSkip">Skip — use Wah Cantt (default) for now</span>
+    </div>
+
     <div class="gate-step" id="gateStepAuth">
       <h2 id="gateAuthTitle">Log in</h2>
       <p class="gate-sub">Same account works on any device — log in on your phone with the same email to see the same data.</p>
@@ -412,7 +433,7 @@
 
   <header class="top">
     <div class="brand">Solar<span>Advisor</span></div>
-    <div class="loc" id="locLabel">Wah Cantt · loading…</div>
+    <div class="loc" id="locLabel">Loading…</div>
   </header>
 
   <div class="hero">
@@ -463,7 +484,8 @@
     <div class="appliance-list" id="applianceList"></div>
     <div class="add-row">
       <input type="text" name="name" id="newName" placeholder="Appliance name">
-      <input type="number" name="watt" id="newWatt" placeholder="Watts">
+      <input type="number" name="watt" id="newWatt" placeholder="Watts each">
+      <input type="number" name="qty" id="newQty" placeholder="Qty" value="1" min="1">
       <button id="addBtn">Add</button>
     </div>
     <button class="log-btn" id="openLogBtn">📝 Log what happened just now</button>
@@ -509,14 +531,38 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="appModal">
+    <div class="modal-card">
+      <h3>Edit appliance</h3>
+      <div class="gate-field">
+        <label>Name</label>
+        <input type="text" id="appModalName">
+      </div>
+      <div class="gate-field">
+        <label>Watts (each)</label>
+        <input type="number" id="appModalWatt">
+      </div>
+      <div class="gate-field">
+        <label>Quantity</label>
+        <input type="number" id="appModalQty" min="1">
+      </div>
+      <p class="modal-note" id="appModalTotal" style="border:none; padding:0; margin:0 0 4px; color:var(--muted); font-family:'IBM Plex Mono',monospace; font-size:13px; min-height:auto;"></p>
+      <div class="modal-actions">
+        <button class="modal-cancel" id="appModalCancel">Cancel</button>
+        <button class="modal-save" id="appModalSave">Save</button>
+      </div>
+      <button class="modal-delete" id="appModalDelete">Delete appliance</button>
+    </div>
+  </div>
+
   <section>
     <details class="settings" id="seasonalPanel">
       <summary>Seasonal outlook — winter vs. summer</summary>
       <div class="seasonal-body">
         <p class="seasonal-intro">
-          Pulls a full year of real historical weather for Wah Cantt (not someone else's
+          Pulls a full year of real historical weather for your location (not someone else's
           dataset) and runs it through the same model above, so you can see how much less
-          your NW-facing array makes in December fog vs. June sun — without waiting for
+          your array makes in winter fog vs. summer sun — without waiting for
           winter to arrive.
         </p>
         <button class="load-btn" id="loadSeasonalBtn">Load last 12 months</button>
@@ -529,6 +575,13 @@
     <details class="settings" id="settingsPanel">
       <summary>System settings</summary>
       <div class="settings-grid">
+        <div class="field full">
+          <label>Location</label>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <span id="cfgLocationLabel" style="font-family:'IBM Plex Mono',monospace; font-size:13px; flex:1;"></span>
+            <button class="load-btn" id="changeLocationBtn" style="flex-shrink:0;">Change</button>
+          </div>
+        </div>
         <div class="field">
           <label>Panel count</label>
           <input type="number" id="cfgPanelCount" value="6">
@@ -578,8 +631,8 @@
   </div>
 
   <footer>
-    Estimates use live sky irradiance for Wah Cantt · not a substitute for your inverter's own protection cut-off.<br>
-    Array facing NW: expect below-average output vs. a south-facing array of the same size.
+    Estimates use live sky irradiance for your location · not a substitute for your inverter's own protection cut-off.<br>
+    Array orientation affects output — check the System settings if your panels don't face true south.
   </footer>
 </div>
 
@@ -611,22 +664,26 @@
    4. Appliance load fitting against available budget
    ========================================================= */
 
-const LAT = 33.7967;   // Wah Cantt
-const LON = 72.7297;
 const STORAGE_KEY = "solar_advisor_state_v1";
 
 const DEFAULT_APPLIANCES = [
-  { id: "ac1",     name: "1.5 Ton Inverter AC (avg)", watt: 1500, active: false },
-  { id: "fridge",  name: "Refrigerator",               watt: 180,  active: true  },
-  { id: "motor",   name: "Water Motor (1 HP)",         watt: 750,  active: false },
-  { id: "fans",    name: "Ceiling Fans (x3)",          watt: 225,  active: true  },
-  { id: "lights",  name: "Lights (LED, whole house)",  watt: 120,  active: true  },
-  { id: "washer",  name: "Washing Machine",             watt: 500,  active: false },
-  { id: "iron",    name: "Electric Iron",               watt: 1000, active: false },
-  { id: "tv",      name: "TV + Router",                 watt: 150,  active: true  },
+  { id: "ac1",     name: "1.5 Ton Inverter AC (avg)", watt: 1500, qty: 1, active: false },
+  { id: "fridge",  name: "Refrigerator",               watt: 180,  qty: 1, active: true  },
+  { id: "motor",   name: "Water Motor (1 HP)",         watt: 750,  qty: 1, active: false },
+  { id: "fans",    name: "Ceiling Fan",                watt: 75,   qty: 3, active: true  },
+  { id: "lights",  name: "Lights (LED, whole house)",  watt: 120,  qty: 1, active: true  },
+  { id: "washer",  name: "Washing Machine",             watt: 500,  qty: 1, active: false },
+  { id: "iron",    name: "Electric Iron",               watt: 1000, qty: 1, active: false },
+  { id: "tv",      name: "TV + Router",                 watt: 150,  qty: 1, active: true  },
 ];
 
+// Wah Cantt is only the fallback for anyone who never set a location (legacy local
+// data, or someone who skipped the location step). Every calculation reads the
+// location from state.config.lat/lon/locationName, not from a fixed constant.
 const DEFAULT_CONFIG = {
+  lat: 33.7967,
+  lon: 72.7297,
+  locationName: "Wah Cantt",
   panelCount: 6,
   panelWatt: 645,
   azimuth: 315,
@@ -636,12 +693,22 @@ const DEFAULT_CONFIG = {
   margin: 15
 };
 
+function normalizeAppliances(list){
+  return (list || []).map(a => ({ qty: 1, ...a }));
+}
+
 function loadState(){
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
-    if(raw) return JSON.parse(raw);
+    if(raw){
+      const parsed = JSON.parse(raw);
+      return {
+        appliances: normalizeAppliances(parsed.appliances && parsed.appliances.length ? parsed.appliances : DEFAULT_APPLIANCES),
+        config: { ...DEFAULT_CONFIG, ...(parsed.config || {}) }
+      };
+    }
   }catch(e){}
-  return { appliances: DEFAULT_APPLIANCES, config: DEFAULT_CONFIG };
+  return { appliances: normalizeAppliances(DEFAULT_APPLIANCES), config: { ...DEFAULT_CONFIG } };
 }
 function saveState(){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -702,7 +769,7 @@ function poaIrradiance(ghi, dni, dhi, sunEl, sunAz, panelTilt, panelAz){
       (satellite API doesn't provide temperature).
 */
 async function fetchSatellite(){
-  const url = `https://satellite-api.open-meteo.com/v1/archive?latitude=${LAT}&longitude=${LON}` +
+  const url = `https://satellite-api.open-meteo.com/v1/archive?latitude=${state.config.lat}&longitude=${state.config.lon}` +
     `&hourly=shortwave_radiation_instant,direct_radiation_instant,diffuse_radiation_instant,direct_normal_irradiance_instant` +
     `&models=satellite_radiation_seamless&temporal_resolution=native&timezone=auto`;
   const res = await fetch(url);
@@ -711,7 +778,7 @@ async function fetchSatellite(){
 }
 
 async function fetchForecast(){
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}` +
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${state.config.lat}&longitude=${state.config.lon}` +
     `&hourly=shortwave_radiation,direct_normal_irradiance,diffuse_radiation,temperature_2m,cloud_cover` +
     `&current=temperature_2m,cloud_cover,shortwave_radiation,direct_normal_irradiance,diffuse_radiation` +
     `&timezone=auto`;
@@ -775,12 +842,12 @@ async function refresh(){
 
   if(!dataCache.satellite && !dataCache.forecast){
     document.getElementById('heroSub').textContent = "Couldn't reach weather service — check your connection.";
-    document.getElementById('locLabel').textContent = "Wah Cantt · offline";
+    document.getElementById('locLabel').textContent = state.config.locationName + " · offline";
     renderSunArc(null, 0);
     return;
   }
 
-  document.getElementById('locLabel').textContent = "Wah Cantt · " + now.toLocaleDateString([], {month:'short', day:'numeric'});
+  document.getElementById('locLabel').textContent = state.config.locationName + " · " + now.toLocaleDateString([], {month:'short', day:'numeric'});
 
   let ghi, dni, dhi, source, ageMin = null;
   const satReading = dataCache.satellite ? latestSatelliteReading(dataCache.satellite) : null;
@@ -802,7 +869,7 @@ async function refresh(){
   const temp = dataCache.forecast?.current?.temperature_2m ?? 25;
   const cloud = dataCache.forecast?.current?.cloud_cover ?? null;
 
-  const sun = getSunPosition(now, LAT, LON);
+  const sun = getSunPosition(now, state.config.lat, state.config.lon);
   const cfg = state.config;
 
   let poa = poaIrradiance(ghi, dni, dhi, sun.elevation, sun.azimuth, cfg.tilt, cfg.azimuth);
@@ -907,14 +974,16 @@ function renderAppliances(){
   const list = document.getElementById('applianceList');
   list.innerHTML = '';
   state.appliances.forEach(a => {
+    const qty = a.qty || 1;
+    const total = a.watt * qty;
     const row = document.createElement('div');
     row.className = 'appliance' + (a.active ? ' active' : '');
     row.innerHTML = `
       <div class="toggle" data-id="${a.id}"></div>
-      <div class="info">
-        <div class="name">${a.name}</div>
+      <div class="info" data-id="${a.id}">
+        <div class="name">${a.name}${qty > 1 ? ` × ${qty}` : ''}</div>
+        <div class="watt-sub">${qty > 1 ? `${a.watt} W each · ` : ''}${total.toLocaleString()} W total</div>
       </div>
-      <input class="watt-edit" type="number" value="${a.watt}" data-id="${a.id}">
       <button class="del" data-id="${a.id}">×</button>
     `;
     list.appendChild(row);
@@ -926,11 +995,8 @@ function renderAppliances(){
     a.active = !a.active;
     saveState(); renderAppliances(); recomputeBudget();
   }));
-  list.querySelectorAll('.watt-edit').forEach(inp => inp.addEventListener('change', e => {
-    const id = e.currentTarget.dataset.id;
-    const a = state.appliances.find(x => x.id === id);
-    a.watt = Math.max(0, parseInt(e.currentTarget.value) || 0);
-    saveState(); recomputeBudget();
+  list.querySelectorAll('.info').forEach(el => el.addEventListener('click', e => {
+    openApplianceModal(e.currentTarget.dataset.id);
   }));
   list.querySelectorAll('.del').forEach(btn => btn.addEventListener('click', e => {
     const id = e.currentTarget.dataset.id;
@@ -938,6 +1004,50 @@ function renderAppliances(){
     saveState(); renderAppliances(); recomputeBudget();
   }));
 }
+
+/* ---------- Appliance edit modal ---------- */
+let editingApplianceId = null;
+
+function openApplianceModal(id){
+  const a = state.appliances.find(x => x.id === id);
+  if(!a) return;
+  editingApplianceId = id;
+  document.getElementById('appModalName').value = a.name;
+  document.getElementById('appModalWatt').value = a.watt;
+  document.getElementById('appModalQty').value = a.qty || 1;
+  updateAppModalTotal();
+  document.getElementById('appModal').classList.add('open');
+}
+function closeApplianceModal(){
+  document.getElementById('appModal').classList.remove('open');
+  editingApplianceId = null;
+}
+function updateAppModalTotal(){
+  const watt = parseInt(document.getElementById('appModalWatt').value) || 0;
+  const qty = Math.max(1, parseInt(document.getElementById('appModalQty').value) || 1);
+  document.getElementById('appModalTotal').textContent = `Total: ${(watt*qty).toLocaleString()} W`;
+}
+document.getElementById('appModalWatt').addEventListener('input', updateAppModalTotal);
+document.getElementById('appModalQty').addEventListener('input', updateAppModalTotal);
+document.getElementById('appModalCancel').addEventListener('click', closeApplianceModal);
+document.getElementById('appModal').addEventListener('click', e => {
+  if(e.target.id === 'appModal') closeApplianceModal();
+});
+document.getElementById('appModalSave').addEventListener('click', () => {
+  const a = state.appliances.find(x => x.id === editingApplianceId);
+  if(!a) return;
+  const name = document.getElementById('appModalName').value.trim();
+  const watt = Math.max(0, parseInt(document.getElementById('appModalWatt').value) || 0);
+  const qty = Math.max(1, parseInt(document.getElementById('appModalQty').value) || 1);
+  if(!name) return;
+  a.name = name; a.watt = watt; a.qty = qty;
+  saveState(); renderAppliances(); recomputeBudget(); closeApplianceModal();
+});
+document.getElementById('appModalDelete').addEventListener('click', () => {
+  if(!editingApplianceId) return;
+  state.appliances = state.appliances.filter(x => x.id !== editingApplianceId);
+  saveState(); renderAppliances(); recomputeBudget(); closeApplianceModal();
+});
 
 let lastAvailable = 0;
 function updateBudget(availableWatts){
@@ -947,7 +1057,7 @@ function updateBudget(availableWatts){
 
 function recomputeBudget(){
   const cfg = state.config;
-  const activeLoad = state.appliances.filter(a=>a.active).reduce((s,a)=>s+a.watt,0);
+  const activeLoad = state.appliances.filter(a=>a.active).reduce((s,a)=>s+a.watt*(a.qty||1),0);
   const safeLimit = lastAvailable * (1 - cfg.margin/100);
 
   document.getElementById('budgetVal').textContent = `${activeLoad.toLocaleString()} / ${Math.round(lastAvailable).toLocaleString()} W`;
@@ -1005,18 +1115,20 @@ function bindSettings(){
 document.getElementById('addBtn').addEventListener('click', () => {
   const nameEl = document.getElementById('newName');
   const wattEl = document.getElementById('newWatt');
+  const qtyEl = document.getElementById('newQty');
   const name = nameEl.value.trim();
   const watt = parseInt(wattEl.value) || 0;
+  const qty = Math.max(1, parseInt(qtyEl.value) || 1);
   if(!name || watt <= 0) return;
-  state.appliances.push({ id: 'a'+Date.now(), name, watt, active: false });
+  state.appliances.push({ id: 'a'+Date.now(), name, watt, qty, active: false });
   saveState(); renderAppliances(); recomputeBudget();
-  nameEl.value = ''; wattEl.value = '';
+  nameEl.value = ''; wattEl.value = ''; qtyEl.value = '1';
 });
 
 /* ---------- Seasonal backtest ----------
    Uses Open-Meteo's free Historical Weather API (ERA5 reanalysis) for these exact
-   coordinates — real Wah Cantt weather, not a foreign dataset — to show how available
-   watts would have looked across a full year, including winter fog and monsoon cloud.
+   coordinates — your actual location's weather, not a foreign dataset — to show how
+   available watts would have looked across a full year, including winter fog and monsoon cloud.
 */
 async function fetchHistoricalYear(){
   const end = new Date();
@@ -1025,7 +1137,7 @@ async function fetchHistoricalYear(){
   start.setFullYear(start.getFullYear() - 1);
   const fmt = d => d.toISOString().slice(0,10);
 
-  const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${LAT}&longitude=${LON}` +
+  const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${state.config.lat}&longitude=${state.config.lon}` +
     `&start_date=${fmt(start)}&end_date=${fmt(end)}` +
     `&hourly=shortwave_radiation,direct_normal_irradiance,diffuse_radiation,temperature_2m` +
     `&timezone=auto`;
@@ -1038,7 +1150,7 @@ document.getElementById('loadSeasonalBtn').addEventListener('click', async () =>
   const btn = document.getElementById('loadSeasonalBtn');
   const wrap = document.getElementById('seasonalChartWrap');
   btn.disabled = true;
-  btn.textContent = "Loading a year of Wah Cantt weather…";
+  btn.textContent = "Loading a year of weather for " + state.config.locationName + "…";
   wrap.innerHTML = '';
   try{
     const data = await fetchHistoricalYear();
@@ -1058,7 +1170,7 @@ document.getElementById('loadSeasonalBtn').addEventListener('click', async () =>
       const hour = dt.getHours();
       if(hour < 11 || hour > 14) continue; // peak usable window only
 
-      const sun = getSunPosition(dt, LAT, LON);
+      const sun = getSunPosition(dt, state.config.lat, state.config.lon);
       const poa = poaIrradiance(ghiArr[i]||0, dniArr[i]||0, dhiArr[i]||0, sun.elevation, sun.azimuth, cfg.tilt, cfg.azimuth);
       const temp = tempArr[i] ?? 25;
       const cellTemp = temp + (poa/800)*25;
@@ -1126,7 +1238,7 @@ document.getElementById('openLogBtn').addEventListener('click', () => {
   pendingSnapshot = {
     time: new Date().toISOString(),
     predictedWatts: lastAvailable,
-    activeLoad: activeApp.reduce((s,a)=>s+a.watt,0),
+    activeLoad: activeApp.reduce((s,a)=>s+a.watt*(a.qty||1),0),
     appliances: activeApp.map(a=>a.name).join(', ') || '(none)',
     azimuth: state.config.azimuth,
     tilt: state.config.tilt,
@@ -1317,7 +1429,7 @@ function loadModel(){
 function predictCurrentRisk(){
   const model = loadModel();
   if(!model) return null;
-  const activeLoad = state.appliances.filter(a=>a.active).reduce((s,a)=>s+a.watt,0);
+  const activeLoad = state.appliances.filter(a=>a.active).reduce((s,a)=>s+a.watt*(a.qty||1),0);
   if(activeLoad === 0) return null;
   const feat = featuresFromLog({
     predictedWatts: lastAvailable, activeLoad,
@@ -1417,7 +1529,7 @@ function buildAgentContext(){
     ageMin: null,
     marginPct: state.config.margin,
     inverterCap: state.config.inverterCap,
-    appliances: state.appliances.map(a => ({ name: a.name, watt: a.watt, active: a.active })),
+    appliances: state.appliances.map(a => ({ name: a.name, watt: a.watt, qty: a.qty || 1, active: a.active })),
     recentLogs: logs.map(l => ({
       time: l.time, predictedWatts: l.predictedWatts, activeLoad: l.activeLoad,
       appliances: l.appliances, outcome: l.outcome, note: l.note || ''
@@ -1494,6 +1606,83 @@ function showGateStep(id){
   document.getElementById(id).classList.add('active');
 }
 
+/* ---------- Location step (used both during signup and for "change location" later) ---------- */
+let pendingLocationCallback = null;
+
+function askLocationThen(next){
+  pendingLocationCallback = next;
+  document.getElementById('gateLocResults').innerHTML = '';
+  document.getElementById('gateLocError').textContent = '';
+  document.getElementById('gateLocSearch').value = '';
+  showGateStep('gateStepLocation');
+}
+
+function selectLocation(lat, lon, label){
+  state.config.lat = lat;
+  state.config.lon = lon;
+  state.config.locationName = label;
+  saveState();
+  updateLocationLabel();
+  if(pendingLocationCallback){
+    const cb = pendingLocationCallback;
+    pendingLocationCallback = null;
+    cb();
+  }
+}
+
+function updateLocationLabel(){
+  const el = document.getElementById('cfgLocationLabel');
+  if(el) el.textContent = state.config.locationName;
+}
+
+document.getElementById('gateLocSearchBtn').addEventListener('click', async () => {
+  const q = document.getElementById('gateLocSearch').value.trim();
+  const errEl = document.getElementById('gateLocError');
+  const resultsEl = document.getElementById('gateLocResults');
+  errEl.textContent = ''; resultsEl.innerHTML = '';
+  if(!q) return;
+  try{
+    const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=5`);
+    const data = await res.json();
+    if(!data.results || !data.results.length){
+      errEl.textContent = 'No matches — try a different spelling or a nearby bigger city.';
+      return;
+    }
+    data.results.forEach(r => {
+      const btn = document.createElement('button');
+      btn.className = 'gate-loc-result';
+      const label = [r.name, r.admin1, r.country].filter(Boolean).join(', ');
+      btn.textContent = label;
+      btn.addEventListener('click', () => selectLocation(r.latitude, r.longitude, label));
+      resultsEl.appendChild(btn);
+    });
+  }catch(e){
+    errEl.textContent = 'Search failed — check your connection and try again.';
+  }
+});
+
+document.getElementById('gateLocGeoBtn').addEventListener('click', () => {
+  const errEl = document.getElementById('gateLocError');
+  errEl.textContent = '';
+  if(!navigator.geolocation){
+    errEl.textContent = "Geolocation isn't supported on this device — search for your city instead.";
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    pos => selectLocation(pos.coords.latitude, pos.coords.longitude, 'Current location'),
+    () => { errEl.textContent = 'Could not get your location — search for your city instead.'; }
+  );
+});
+
+document.getElementById('gateLocSkip').addEventListener('click', () => {
+  selectLocation(33.7967, 72.7297, 'Wah Cantt');
+});
+
+document.getElementById('changeLocationBtn').addEventListener('click', () => {
+  document.body.classList.remove('app-ready');
+  askLocationThen(() => { document.body.classList.add('app-ready'); });
+});
+
 document.getElementById('gateStartSetup').addEventListener('click', () => showGateStep('gateStepSetup'));
 document.getElementById('gateBackFromSetup').addEventListener('click', () => showGateStep('gateStepIntro'));
 document.getElementById('gateForgetSetup').addEventListener('click', () => {
@@ -1502,7 +1691,13 @@ document.getElementById('gateForgetSetup').addEventListener('click', () => {
 });
 document.getElementById('gateSkipCloud').addEventListener('click', () => {
   localStorage.setItem(SKIP_CLOUD_KEY, '1');
-  enterApp();
+  // Only a brand-new local install (no saved state yet) needs to be asked — an
+  // existing device keeps whatever area it already has (Wah Cantt by default).
+  if(!localStorage.getItem(STORAGE_KEY)){
+    askLocationThen(enterApp);
+  } else {
+    enterApp();
+  }
 });
 
 document.getElementById('gateSaveSetup').addEventListener('click', () => {
@@ -1548,6 +1743,15 @@ document.getElementById('gateAuthSubmit').addEventListener('click', async () => 
         return;
       }
       currentUser = data.session.user;
+      cloudEnabled = true;
+      btn.disabled = false; btn.textContent = 'Sign up';
+      // New account — ask where the system is before pulling/seeding cloud state,
+      // so the very first sync already carries the right location.
+      askLocationThen(async () => {
+        await loadCloudState();
+        enterApp();
+      });
+      return;
     } else {
       const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
       if(error) throw error;
@@ -1583,7 +1787,7 @@ async function loadCloudState(){
 
   if(data){
     if(data.config) state.config = { ...state.config, ...data.config };
-    if(data.appliances) state.appliances = data.appliances;
+    if(data.appliances) state.appliances = normalizeAppliances(data.appliances);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     if(data.logs) localStorage.setItem(LOG_KEY, JSON.stringify(data.logs));
     if(data.model) localStorage.setItem(MODEL_KEY, JSON.stringify(data.model));
@@ -1637,6 +1841,7 @@ function enterApp(){
 function initApp(){
   renderAppliances();
   bindSettings();
+  updateLocationLabel();
   renderLogHistory();
   retrainModel();
   updateAccountPanel();
