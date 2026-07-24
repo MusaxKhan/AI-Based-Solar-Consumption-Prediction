@@ -291,11 +291,14 @@
   }
   .chat-input-row button:disabled{opacity:0.4;}
   .chat-setup{padding:14px; font-size:12px; color:var(--muted); line-height:1.6;}
+  .chat-setup a{color:var(--cyan);}
   .chat-setup input{
     width:100%; background:var(--bg); border:1px solid var(--line); border-radius:8px; color:var(--text);
     padding:8px 9px; font-size:12px; font-family:'IBM Plex Mono',monospace; margin-top:6px;
   }
   .chat-setup button{margin-top:10px; background:var(--cyan); color:#0a2226; border:none; border-radius:7px; padding:8px 14px; font-weight:700; font-size:12.5px; cursor:pointer;}
+  .chat-setup button:disabled{opacity:0.5; cursor:default;}
+  .chat-setup-error{color:var(--danger); margin-top:8px; font-size:11.5px; min-height:0;}
 
   /* ---- personal model ---- */
   .model-card{
@@ -703,13 +706,18 @@
 <div class="chat-panel" id="chatPanel">
   <div class="chat-header">
     <span class="title">Ask Solar Advisor</span>
-    <button class="close" id="chatCloseBtn">×</button>
+    <div style="display:flex; gap:4px; align-items:center;">
+      <button class="close" id="chatKeyBtn" title="Change Groq API key">🔑</button>
+      <button class="close" id="chatCloseBtn">×</button>
+    </div>
   </div>
   <div id="chatSetup" class="chat-setup">
-    Needs a small backend running locally (see README → "Agent backend").
-    <br>Backend URL:
-    <input type="text" id="agentUrl" value="http://localhost:8787" placeholder="http://localhost:8787">
+    Free and fast, no server to run — powered by <a href="https://console.groq.com/keys" target="_blank" rel="noopener">Groq</a>.
+    Grab a free API key there (no credit card needed) and paste it below.
+    <br>Groq API key:
+    <input type="password" id="groqKeyInput" placeholder="gsk_...">
     <br><button id="agentConnectBtn">Connect</button>
+    <div class="chat-setup-error" id="chatSetupError"></div>
   </div>
   <div class="chat-messages" id="chatMessages" style="display:none;"></div>
   <div class="chat-input-row" id="chatInputRow" style="display:none;">
@@ -1605,41 +1613,154 @@ async function checkForUpdate(manual){
 
 document.getElementById('checkUpdateBtn').addEventListener('click', () => checkForUpdate(true));
 
-/* ---------- Chat agent ---------- */
-let agentUrl = localStorage.getItem('solar_advisor_agent_url') || 'http://localhost:8787';
-let chatHistory = [];
-let agentConnected = false;
+/* ---------- Chat agent ----------
+   Runs entirely in the browser — no backend to host or keep running. Calls
+   Groq's free, very fast API (OpenAI-compatible tool calling) directly with
+   your own API key, stored only in this browser's localStorage.
 
-document.getElementById('agentUrl').value = agentUrl;
+   Design principle (unchanged from the old Python backend): the model never
+   invents wattage math. It calls check_combo, a plain JS function that does
+   the arithmetic against the exact data the app already computed — the
+   model's job is only to reason and explain in natural language. */
+
+const GROQ_MODEL = "llama-3.3-70b-versatile"; // fast on Groq's hardware regardless of size
+const GROQ_KEY_STORAGE = "solar_advisor_groq_key";
+
+const AGENT_SYSTEM_PROMPT = `You are the assistant inside "Solar Advisor" — a personal app that tells the user what appliances they can safely run on solar-only inverter mode, based on live sun/weather data for their specific home system.
+
+Ground rules:
+- Never compute or guess wattage totals yourself. Always call check_combo for any question about whether something fits, even if it seems like simple addition.
+- If the person asks about past reliability ("has this worked before?", "did the AC trip last time?"), call get_test_history rather than speculating.
+- Be direct and concrete. State the verdict plainly (safe / marginal / over budget), then briefly explain why, referencing actual numbers from the tool result.
+- If a combination is "marginal", warn that a passing cloud could tip it over — don't present it as fully safe.
+- Keep responses short — this is a quick check-in tool, not a report. 2-4 sentences unless the person asks for more detail.
+- You do not have live access to anything not given to you in tool results or context. Don't invent weather details, exact percentages, or appliance wattages that weren't provided.`;
+
+const AGENT_TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "check_combo",
+      description: "Check whether a specific combination of appliances fits within the current solar power budget. Always use this instead of doing the arithmetic yourself — it uses the live, physics-model-derived available wattage, not an assumption.",
+      parameters: {
+        type: "object",
+        properties: {
+          appliance_names: {
+            type: "array",
+            items: { type: "string" },
+            description: "Names of appliances to check, e.g. ['AC', 'Fridge']"
+          }
+        },
+        required: ["appliance_names"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_test_history",
+      description: "Look up real logged outcomes from past tests on this system (whether the inverter actually held or tripped for a given combination). Use this when the person asks about reliability or past experience, not just the model's prediction.",
+      parameters: {
+        type: "object",
+        properties: {
+          appliance_filter: { type: "string", description: "Optional: filter logs to entries mentioning this appliance name" }
+        }
+      }
+    }
+  }
+];
+
+function checkComboTool(applianceNames, context){
+  const list = Array.isArray(applianceNames) ? applianceNames : [];
+  const matched = [], unmatched = [];
+  list.forEach(n => {
+    const lower = String(n).toLowerCase();
+    const exact = context.appliances.find(a => a.name.toLowerCase() === lower);
+    if(exact){ matched.push(exact); return; }
+    const candidates = context.appliances.filter(a => a.name.toLowerCase().includes(lower));
+    if(candidates.length) matched.push(candidates[0]);
+    else unmatched.push(n);
+  });
+
+  const total = matched.reduce((s,a) => s + a.watt * (a.qty || 1), 0);
+  const safeLimit = context.availableWatts * (1 - context.marginPct / 100);
+  let verdict;
+  if(total === 0) verdict = 'no_appliances_matched';
+  else if(total <= safeLimit) verdict = 'safe';
+  else if(total <= context.availableWatts) verdict = 'marginal';
+  else verdict = 'over_budget';
+
+  return {
+    matched_appliances: matched.map(a => ({ name: a.name, watt_each: a.watt, qty: a.qty || 1, watt_total: a.watt * (a.qty || 1) })),
+    unmatched_names: unmatched,
+    total_watts: total,
+    available_watts: context.availableWatts,
+    safe_limit_watts: Math.round(safeLimit),
+    inverter_capacity_watts: context.inverterCap,
+    verdict
+  };
+}
+
+function getTestHistoryTool(context, applianceFilter){
+  let logs = context.recentLogs;
+  if(applianceFilter) logs = logs.filter(l => (l.appliances || '').toLowerCase().includes(applianceFilter.toLowerCase()));
+  return { count: logs.length, entries: logs.slice(0, 10) };
+}
+
+let groqApiKey = localStorage.getItem(GROQ_KEY_STORAGE) || '';
+let agentMessages = []; // running conversation (user/assistant/tool), system prompt added per-request
+let agentConnected = !!groqApiKey;
+
+if(agentConnected){
+  document.getElementById('chatSetup').style.display = 'none';
+  document.getElementById('chatMessages').style.display = 'flex';
+  document.getElementById('chatInputRow').style.display = 'flex';
+}
+
 document.getElementById('chatFab').addEventListener('click', () => {
   document.getElementById('chatPanel').classList.add('open');
 });
 document.getElementById('chatCloseBtn').addEventListener('click', () => {
   document.getElementById('chatPanel').classList.remove('open');
 });
+document.getElementById('chatKeyBtn').addEventListener('click', () => {
+  document.getElementById('groqKeyInput').value = groqApiKey;
+  document.getElementById('chatSetupError').textContent = '';
+  document.getElementById('chatSetup').style.display = 'block';
+  document.getElementById('chatMessages').style.display = 'none';
+  document.getElementById('chatInputRow').style.display = 'none';
+});
 
 document.getElementById('agentConnectBtn').addEventListener('click', async () => {
-  agentUrl = document.getElementById('agentUrl').value.trim().replace(/\/$/, '');
-  localStorage.setItem('solar_advisor_agent_url', agentUrl);
+  const key = document.getElementById('groqKeyInput').value.trim();
   const btn = document.getElementById('agentConnectBtn');
-  btn.textContent = "Connecting…";
+  const errEl = document.getElementById('chatSetupError');
+  errEl.textContent = '';
+  if(!key){ errEl.textContent = 'Paste your Groq API key first.'; return; }
+  btn.disabled = true; btn.textContent = 'Connecting…';
   try{
-    const res = await fetch(agentUrl + '/health');
-    const data = await res.json();
-    if(data.ok && data.key_configured){
-      agentConnected = true;
-      document.getElementById('chatSetup').style.display = 'none';
-      document.getElementById('chatMessages').style.display = 'flex';
-      document.getElementById('chatInputRow').style.display = 'flex';
-      addChatBubble("Connected. Ask me anything about what's safe to run right now.", 'system-note');
-    } else if(data.ok){
-      btn.textContent = "Connect";
-      alert("Backend is reachable but ANTHROPIC_API_KEY isn't set on the server. Check the backend's .env file.");
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+      body: JSON.stringify({ model: GROQ_MODEL, messages: [{ role: 'user', content: 'hi' }], max_tokens: 5 })
+    });
+    if(!res.ok){
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body?.error?.message || `HTTP ${res.status}`);
     }
+    groqApiKey = key;
+    localStorage.setItem(GROQ_KEY_STORAGE, key);
+    agentConnected = true;
+    agentMessages = [];
+    document.getElementById('chatMessages').innerHTML = '';
+    document.getElementById('chatSetup').style.display = 'none';
+    document.getElementById('chatMessages').style.display = 'flex';
+    document.getElementById('chatInputRow').style.display = 'flex';
+    addChatBubble("Connected. Ask me anything about what's safe to run right now.", 'system-note');
   }catch(e){
-    btn.textContent = "Connect";
-    alert("Couldn't reach the backend. Make sure it's running (see README → Agent backend) and the URL is correct.");
+    errEl.textContent = "Couldn't connect — " + (e.message || 'check your key and try again.');
   }
+  btn.disabled = false; btn.textContent = 'Connect';
 });
 
 function addChatBubble(text, cls){
@@ -1668,6 +1789,26 @@ function buildAgentContext(){
   };
 }
 
+function buildSnapshot(context){
+  return `[Current state: ${context.availableWatts}W available (source: ${context.source})` +
+    `, inverter cap ${context.inverterCap}W, safety margin ${context.marginPct}%. Known appliances: ` +
+    context.appliances.map(a => `${a.name} (${a.watt}W each x${a.qty || 1} = ${a.watt * (a.qty || 1)}W, ${a.active ? 'on' : 'off'})`).join(', ') +
+    `]`;
+}
+
+async function callGroq(messages){
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + groqApiKey },
+    body: JSON.stringify({ model: GROQ_MODEL, messages, tools: AGENT_TOOLS, tool_choice: 'auto', temperature: 0.3, max_tokens: 600 })
+  });
+  if(!res.ok){
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error?.message || `Groq error ${res.status}`);
+  }
+  return res.json();
+}
+
 async function sendChatMessage(){
   const input = document.getElementById('chatInput');
   const text = input.value.trim();
@@ -1678,32 +1819,55 @@ async function sendChatMessage(){
   sendBtn.disabled = true;
   const thinking = addChatBubble('…', 'assistant');
 
+  const context = buildAgentContext();
+  agentMessages.push({ role: 'user', content: `${buildSnapshot(context)}\n\n${text}` });
+  if(agentMessages.length > 30) agentMessages = agentMessages.slice(-30);
+
   try{
-    const res = await fetch(agentUrl + '/chat', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        message: text,
-        history: chatHistory,
-        context: buildAgentContext(),
-      })
-    });
-    const data = await res.json();
-    thinking.remove();
-    if(data.reply){
-      addChatBubble(data.reply, 'assistant');
-      chatHistory.push({role:'user', content: text});
-      chatHistory.push({role:'assistant', content: data.reply});
-      if(chatHistory.length > 20) chatHistory = chatHistory.slice(-20);
-    } else {
-      addChatBubble("Something went wrong on the backend.", 'system-note');
+    let reply = null;
+    for(let i = 0; i < 4 && reply === null; i++){
+      const data = await callGroq([{ role: 'system', content: AGENT_SYSTEM_PROMPT }, ...agentMessages]);
+      const msg = data.choices[0].message;
+
+      if(!msg.tool_calls || !msg.tool_calls.length){
+        reply = msg.content || "I don't have anything more to add.";
+        agentMessages.push({ role: 'assistant', content: reply });
+        break;
+      }
+
+      agentMessages.push(msg);
+      for(const call of msg.tool_calls){
+        let result;
+        try{
+          const args = JSON.parse(call.function.arguments || '{}');
+          if(call.function.name === 'check_combo') result = checkComboTool(args.appliance_names, context);
+          else if(call.function.name === 'get_test_history') result = getTestHistoryTool(context, args.appliance_filter);
+          else result = { error: `unknown tool ${call.function.name}` };
+        }catch(e){
+          result = { error: 'bad tool arguments' };
+        }
+        agentMessages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
+      }
     }
+
+    thinking.remove();
+    if(reply !== null) addChatBubble(reply, 'assistant');
+    else addChatBubble("Sorry, I got stuck reasoning about that — try rephrasing your question.", 'system-note');
   }catch(e){
     thinking.remove();
-    addChatBubble("Couldn't reach the backend — is it still running?", 'system-note');
+    if(String(e.message || '').toLowerCase().includes('invalid api key') || String(e.message || '').includes('401')){
+      addChatBubble("Your Groq API key was rejected — tap 🔑 above to update it.", 'system-note');
+    } else {
+      addChatBubble("Couldn't reach Groq — " + (e.message || 'check your connection and try again.'), 'system-note');
+    }
   }
   sendBtn.disabled = false;
 }
+
+document.getElementById('chatSendBtn').addEventListener('click', sendChatMessage);
+document.getElementById('chatInput').addEventListener('keydown', (e) => {
+  if(e.key === 'Enter') sendChatMessage();
+});
 
 /* ---------- Account & cloud sync (Supabase) ----------
    State stays local-first: localStorage remains the thing every existing
