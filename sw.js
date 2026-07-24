@@ -1,4 +1,9 @@
-const CACHE_NAME = "solar-advisor-v1";
+// IMPORTANT: bump this string on every deploy (v2, v3, v4...). The browser only
+// detects an update when this file's bytes change, and the old cache is only
+// purged/refetched when the cache name itself changes. Changing index.html
+// alone is NOT enough to trigger the in-app "Check for updates" button — this
+// line has to change too. Keep it in step with APP_VERSION in index.html.
+const CACHE_NAME = "solar-advisor-v2";
 const SHELL_FILES = [
   "./",
   "./index.html",

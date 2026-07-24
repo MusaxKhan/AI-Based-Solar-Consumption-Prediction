@@ -582,6 +582,13 @@
             <button class="load-btn" id="changeLocationBtn" style="flex-shrink:0;">Change</button>
           </div>
         </div>
+        <div class="field full">
+          <label>App version</label>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <span id="appVersionLabel" style="font-family:'IBM Plex Mono',monospace; font-size:13px; flex:1;"></span>
+            <button class="load-btn" id="checkUpdateBtn" style="flex-shrink:0;">Check for updates</button>
+          </div>
+        </div>
         <div class="field">
           <label>Panel count</label>
           <input type="number" id="cfgPanelCount" value="6">
@@ -630,6 +637,11 @@
     <button id="installBtn">Install</button>
   </div>
 
+  <div class="install-banner" id="updateBanner" style="border-color:var(--cyan);">
+    <span>A new version of the app is ready.</span>
+    <button id="updateBannerBtn" style="background:var(--cyan); color:#0a2226;">Reload</button>
+  </div>
+
   <footer>
     Estimates use live sky irradiance for your location · not a substitute for your inverter's own protection cut-off.<br>
     Array orientation affects output — check the System settings if your panels don't face true south.
@@ -663,6 +675,11 @@
    3. PV output estimate with temperature derate
    4. Appliance load fitting against available budget
    ========================================================= */
+
+// Bump this on every deploy — shown in System settings and used to confirm an
+// update actually landed. Bump sw.js's CACHE_NAME at the same time (see that
+// file's top comment) or the service worker won't notice anything changed.
+const APP_VERSION = "1.1.0";
 
 const STORAGE_KEY = "solar_advisor_state_v1";
 
@@ -1467,12 +1484,69 @@ document.getElementById('installBtn').addEventListener('click', async () => {
   document.getElementById('installBanner').style.display = 'none';
 });
 
-/* ---------- Service worker ---------- */
+/* ---------- Service worker & app updates ----------
+   The service worker caches the app shell for offline use. When a new version
+   is deployed, the browser detects sw.js's bytes changed, installs the new
+   worker in the background, and we surface that as a banner + button — the
+   page only reloads when the person explicitly asks it to, never silently
+   mid-use. */
+let swRegistration = null;
+
+function showUpdateBanner(){
+  document.getElementById('updateBanner').style.display = 'flex';
+}
+
+document.getElementById('updateBannerBtn').addEventListener('click', () => {
+  window.location.reload();
+});
+
 if('serviceWorker' in navigator){
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  window.addEventListener('load', async () => {
+    try{
+      swRegistration = await navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' });
+      swRegistration.addEventListener('updatefound', () => {
+        const newWorker = swRegistration.installing;
+        if(!newWorker) return;
+        newWorker.addEventListener('statechange', () => {
+          // A controller already existing means this is a genuine update, not
+          // the very first install on this device.
+          if(newWorker.state === 'installed' && navigator.serviceWorker.controller){
+            showUpdateBanner();
+          }
+        });
+      });
+    }catch(e){}
   });
 }
+
+async function checkForUpdate(manual){
+  const btn = document.getElementById('checkUpdateBtn');
+  const original = 'Check for updates';
+  if(!('serviceWorker' in navigator) || !swRegistration){
+    if(manual){
+      btn.textContent = "Can't check yet — reload once first";
+      setTimeout(() => { btn.textContent = original; }, 2500);
+    }
+    return;
+  }
+  if(manual){ btn.disabled = true; btn.textContent = 'Checking…'; }
+  try{
+    await swRegistration.update();
+  }catch(e){}
+  if(manual){
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.textContent = document.getElementById('updateBanner').style.display === 'flex'
+        ? original
+        : "You're up to date";
+      if(document.getElementById('updateBanner').style.display !== 'flex'){
+        setTimeout(() => { btn.textContent = original; }, 2000);
+      }
+    }, 1200);
+  }
+}
+
+document.getElementById('checkUpdateBtn').addEventListener('click', () => checkForUpdate(true));
 
 /* ---------- Chat agent ---------- */
 let agentUrl = localStorage.getItem('solar_advisor_agent_url') || 'http://localhost:8787';
@@ -1842,14 +1916,27 @@ function initApp(){
   renderAppliances();
   bindSettings();
   updateLocationLabel();
+  document.getElementById('appVersionLabel').textContent = 'v' + APP_VERSION;
   renderLogHistory();
   retrainModel();
   updateAccountPanel();
   refresh();
-  setInterval(refresh, 5*60*1000);
+  setInterval(refresh, 2*60*1000);
   setInterval(() => {
     document.getElementById('clock').textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
   }, 30*1000);
+
+  // Mobile browsers throttle or fully pause timers once the tab/PWA is
+  // backgrounded or the screen locks — that's why wattage otherwise only
+  // updates on a manual reload. Catch up the moment the app is visible again.
+  document.addEventListener('visibilitychange', () => {
+    if(document.visibilityState === 'visible'){
+      refresh();
+      checkForUpdate(false);
+    }
+  });
+  window.addEventListener('focus', refresh);
+  window.addEventListener('pageshow', refresh);
 }
 
 async function bootstrap(){
