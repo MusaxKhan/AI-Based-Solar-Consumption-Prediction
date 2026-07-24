@@ -357,6 +357,13 @@
     color:var(--text); border-radius:8px; padding:9px 11px; font-size:13px; margin-top:6px; cursor:pointer;
   }
   .gate-loc-result:hover{border-color:var(--cyan);}
+  .gate-chip-row{display:flex; flex-wrap:wrap; gap:6px; margin-top:2px;}
+  .gate-chip{
+    background:var(--bg); border:1px solid var(--line); color:var(--text);
+    border-radius:999px; padding:7px 13px; font-size:12.5px; cursor:pointer;
+  }
+  .gate-chip:hover{border-color:var(--cyan);}
+  .gate-chip.selected{background:var(--cyan); border-color:var(--cyan); color:#0a2226; font-weight:700;}
   .gate-switch{font-size:12.5px; color:var(--muted); text-align:center; margin-top:16px;}
   .gate-switch a{color:var(--cyan); cursor:pointer; text-decoration:underline;}
   #gateOverlay .gate-step{display:none;}
@@ -407,6 +414,43 @@
       <div id="gateLocResults"></div>
       <p class="gate-error" id="gateLocError"></p>
       <span class="gate-link" id="gateLocSkip">Skip — use Wah Cantt (default) for now</span>
+    </div>
+
+    <div class="gate-step" id="gateStepBasics">
+      <h2>Tell us about your panels</h2>
+      <p class="gate-sub">Just what you can see on the roof or on the box — nothing technical.</p>
+      <div class="gate-field">
+        <label>How many solar panels do you have?</label>
+        <input type="number" id="gateBasicsCount" placeholder="e.g. 6" min="1">
+      </div>
+      <div class="gate-field">
+        <label>Size of each panel (check the sticker on a panel, if you can)</label>
+        <div class="gate-chip-row" id="gateBasicsWattChips">
+          <button type="button" class="gate-chip" data-val="330">330W</button>
+          <button type="button" class="gate-chip" data-val="400">400W</button>
+          <button type="button" class="gate-chip" data-val="450">450W</button>
+          <button type="button" class="gate-chip" data-val="500">500W</button>
+          <button type="button" class="gate-chip" data-val="545">545W</button>
+          <button type="button" class="gate-chip" data-val="600">600W</button>
+          <button type="button" class="gate-chip" data-val="">Not sure</button>
+        </div>
+      </div>
+      <div class="gate-field">
+        <label>Which way do your panels mostly face?</label>
+        <div class="gate-chip-row" id="gateBasicsDirChips">
+          <button type="button" class="gate-chip" data-val="0">N</button>
+          <button type="button" class="gate-chip" data-val="45">NE</button>
+          <button type="button" class="gate-chip" data-val="90">E</button>
+          <button type="button" class="gate-chip" data-val="135">SE</button>
+          <button type="button" class="gate-chip" data-val="180">S</button>
+          <button type="button" class="gate-chip" data-val="225">SW</button>
+          <button type="button" class="gate-chip" data-val="270">W</button>
+          <button type="button" class="gate-chip" data-val="315">NW</button>
+          <button type="button" class="gate-chip" data-val="">Not sure</button>
+        </div>
+      </div>
+      <button class="gate-btn secondary" id="gateBasicsContinue">Continue</button>
+      <span class="gate-link" id="gateBasicsSkip">Skip — I'll set this up later</span>
     </div>
 
     <div class="gate-step" id="gateStepAuth">
@@ -580,6 +624,13 @@
           <div style="display:flex; gap:8px; align-items:center;">
             <span id="cfgLocationLabel" style="font-family:'IBM Plex Mono',monospace; font-size:13px; flex:1;"></span>
             <button class="load-btn" id="changeLocationBtn" style="flex-shrink:0;">Change</button>
+          </div>
+        </div>
+        <div class="field full">
+          <label>Panels &amp; roof direction</label>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <span style="font-size:12.5px; color:var(--muted); flex:1;">Quick, plain-language setup — no technical numbers.</span>
+            <button class="load-btn" id="redoBasicsBtn" style="flex-shrink:0;">Redo setup</button>
           </div>
         </div>
         <div class="field full">
@@ -1113,14 +1164,20 @@ function recomputeBudget(){
 }
 
 /* ---------- Settings binding ---------- */
-function bindSettings(){
-  const map = {
-    cfgPanelCount: 'panelCount', cfgPanelWatt: 'panelWatt', cfgAzimuth: 'azimuth',
-    cfgTilt: 'tilt', cfgInverter: 'inverterCap', cfgDerate: 'derate', cfgMargin: 'margin'
-  };
-  Object.entries(map).forEach(([elId, key]) => {
+const SETTINGS_FIELD_MAP = {
+  cfgPanelCount: 'panelCount', cfgPanelWatt: 'panelWatt', cfgAzimuth: 'azimuth',
+  cfgTilt: 'tilt', cfgInverter: 'inverterCap', cfgDerate: 'derate', cfgMargin: 'margin'
+};
+function syncSettingsFields(){
+  Object.entries(SETTINGS_FIELD_MAP).forEach(([elId, key]) => {
     const el = document.getElementById(elId);
-    el.value = state.config[key];
+    if(el) el.value = state.config[key];
+  });
+}
+function bindSettings(){
+  syncSettingsFields();
+  Object.entries(SETTINGS_FIELD_MAP).forEach(([elId, key]) => {
+    const el = document.getElementById(elId);
     el.addEventListener('change', () => {
       state.config[key] = parseFloat(el.value) || 0;
       saveState();
@@ -1757,6 +1814,65 @@ document.getElementById('changeLocationBtn').addEventListener('click', () => {
   askLocationThen(() => { document.body.classList.add('app-ready'); });
 });
 
+/* ---------- System basics step (plain-language panel setup) ---------- */
+let pendingBasicsCallback = null;
+let selectedPanelWatt = null;
+let selectedAzimuth = null;
+
+function wireChipGroup(containerId, onSelect){
+  document.querySelectorAll(`#${containerId} .gate-chip`).forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll(`#${containerId} .gate-chip`).forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      onSelect(btn.dataset.val);
+    });
+  });
+}
+wireChipGroup('gateBasicsWattChips', v => { selectedPanelWatt = v; });
+wireChipGroup('gateBasicsDirChips', v => { selectedAzimuth = v; });
+
+function askSystemBasicsThen(next){
+  pendingBasicsCallback = next;
+  document.getElementById('gateBasicsCount').value = state.config.panelCount || '';
+  document.querySelectorAll('#gateBasicsWattChips .gate-chip, #gateBasicsDirChips .gate-chip').forEach(b => b.classList.remove('selected'));
+  selectedPanelWatt = null;
+  selectedAzimuth = null;
+  showGateStep('gateStepBasics');
+}
+
+function finishBasics(){
+  if(pendingBasicsCallback){
+    const cb = pendingBasicsCallback;
+    pendingBasicsCallback = null;
+    cb();
+  }
+}
+
+document.getElementById('gateBasicsContinue').addEventListener('click', () => {
+  const count = Math.max(1, parseInt(document.getElementById('gateBasicsCount').value) || state.config.panelCount || 6);
+  const watt = selectedPanelWatt ? parseInt(selectedPanelWatt) : (state.config.panelWatt || 545);
+  // "Not sure" (or nothing picked) — facing the equator is the general rule of
+  // thumb, so default south in the northern hemisphere and north below it.
+  const azimuth = selectedAzimuth ? parseInt(selectedAzimuth) : (state.config.lat >= 0 ? 180 : 0);
+
+  state.config.panelCount = count;
+  state.config.panelWatt = watt;
+  state.config.azimuth = azimuth;
+  state.config.inverterCap = Math.round(count * watt * 0.9);
+  saveState();
+  syncSettingsFields();
+  recomputeBudget();
+  refresh();
+  finishBasics();
+});
+
+document.getElementById('gateBasicsSkip').addEventListener('click', finishBasics);
+
+document.getElementById('redoBasicsBtn').addEventListener('click', () => {
+  document.body.classList.remove('app-ready');
+  askSystemBasicsThen(() => { document.body.classList.add('app-ready'); });
+});
+
 document.getElementById('gateStartSetup').addEventListener('click', () => showGateStep('gateStepSetup'));
 document.getElementById('gateBackFromSetup').addEventListener('click', () => showGateStep('gateStepIntro'));
 document.getElementById('gateForgetSetup').addEventListener('click', () => {
@@ -1766,9 +1882,9 @@ document.getElementById('gateForgetSetup').addEventListener('click', () => {
 document.getElementById('gateSkipCloud').addEventListener('click', () => {
   localStorage.setItem(SKIP_CLOUD_KEY, '1');
   // Only a brand-new local install (no saved state yet) needs to be asked — an
-  // existing device keeps whatever area it already has (Wah Cantt by default).
+  // existing device keeps whatever area/setup it already has.
   if(!localStorage.getItem(STORAGE_KEY)){
-    askLocationThen(enterApp);
+    askLocationThen(() => askSystemBasicsThen(enterApp));
   } else {
     enterApp();
   }
@@ -1819,12 +1935,12 @@ document.getElementById('gateAuthSubmit').addEventListener('click', async () => 
       currentUser = data.session.user;
       cloudEnabled = true;
       btn.disabled = false; btn.textContent = 'Sign up';
-      // New account — ask where the system is before pulling/seeding cloud state,
-      // so the very first sync already carries the right location.
-      askLocationThen(async () => {
+      // New account — ask where the system is (and what it looks like) before
+      // pulling/seeding cloud state, so the very first sync already has it.
+      askLocationThen(() => askSystemBasicsThen(async () => {
         await loadCloudState();
         enterApp();
-      });
+      }));
       return;
     } else {
       const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
