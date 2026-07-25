@@ -692,6 +692,39 @@
   </section>
 
   <section>
+    <details class="settings" id="notifyPanel" open>
+      <summary>Power alerts & sound</summary>
+      <div class="seasonal-body">
+        <p class="seasonal-intro">Get a native phone notification (plus a short chime) the moment there's enough sun to run something big.</p>
+
+        <div class="field full" style="margin-bottom:10px;">
+          <label>Power alerts</label>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <span style="font-size:12.5px; color:var(--muted); flex:1;" id="notifyStatusText">Off</span>
+            <button class="load-btn" id="notifyToggleBtn" style="flex-shrink:0;">Turn on</button>
+          </div>
+        </div>
+
+        <div class="field full" style="margin-bottom:10px;">
+          <label>Alert me when available power passes (W)</label>
+          <input type="number" id="notifyThreshold" value="1000" min="100" step="100">
+        </div>
+
+        <div class="field full" style="margin-bottom:10px;">
+          <label>Chime</label>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <span style="font-size:12.5px; color:var(--muted); flex:1;">A single short sound plays with the alert — nothing looping or musical.</span>
+            <button class="load-btn" id="notifySoundBtn" style="flex-shrink:0;">On</button>
+          </div>
+        </div>
+
+        <button class="load-btn" id="notifyTestBtn">Send a test alert</button>
+        <p class="chat-setup-error" id="notifyError"></p>
+      </div>
+    </details>
+  </section>
+
+  <section>
     <details class="settings" id="accountPanel">
       <summary>Account & sync</summary>
       <div class="seasonal-body">
@@ -754,7 +787,7 @@
 // Bump this on every deploy — shown in System settings and used to confirm an
 // update actually landed. Bump sw.js's CACHE_NAME at the same time (see that
 // file's top comment) or the service worker won't notice anything changed.
-const APP_VERSION = "1.3.0";
+const APP_VERSION = "1.4.0";
 
 const STORAGE_KEY = "solar_advisor_state_v1";
 
@@ -1143,8 +1176,10 @@ document.getElementById('appModalDelete').addEventListener('click', () => {
 
 let lastAvailable = 0;
 function updateBudget(availableWatts){
+  const prevAvailable = lastAvailable;
   lastAvailable = availableWatts;
   recomputeBudget();
+  checkPowerNotifications(prevAvailable, lastAvailable);
 }
 
 function recomputeBudget(){
@@ -1186,6 +1221,199 @@ function recomputeBudget(){
 
   updateRiskLine();
 }
+
+/* ---------- Power alerts & sound ----------
+   Fires a real phone notification (+ short chime) the moment available power
+   crosses a meaningful line upward — either a flat W threshold, or the exact
+   point a specific off appliance now fits the budget. Only fires ON THE
+   CROSSING, never every tick while already above it, and never on the very
+   first reading after opening the app (that's not new information — it's
+   just what the screen already shows).
+*/
+const NOTIFY_KEY = "solar_advisor_notify_v1";
+function loadNotifySettings(){
+  try{ return { enabled:false, threshold:1000, sound:true, ...JSON.parse(localStorage.getItem(NOTIFY_KEY)) }; }
+  catch(e){ return { enabled:false, threshold:1000, sound:true }; }
+}
+function saveNotifySettings(){ localStorage.setItem(NOTIFY_KEY, JSON.stringify(notifySettings)); }
+let notifySettings = loadNotifySettings();
+let notifyBaselineSet = false;
+let notifiedMilestone = false;
+let notifiedAppliances = new Set();
+
+const MILESTONE_LINES = [
+  n => `⚡ ${n.toLocaleString()}W and climbing — the sun's showing off today.`,
+  n => `☀️ ${n.toLocaleString()}W available. Big appliances, this is your moment.`,
+  n => `🔆 Solar budget just cleared ${n.toLocaleString()}W — go make some noise.`,
+  n => `🚀 ${n.toLocaleString()}W on tap. Time to put it to work.`,
+  n => `⚡ Panels are cooking — ${n.toLocaleString()}W free and clear right now.`,
+  n => `🔋 ${n.toLocaleString()}W in the bank. The grid didn't even notice.`,
+];
+const APPLIANCE_LINES = [
+  name => `❄️ You can run the ${name} now — the sun's footing the bill.`,
+  name => `⚡ Green light on the ${name}. Budget says go.`,
+  name => `☀️ Enough juice for the ${name} — guilt-free power move.`,
+  name => `🔋 The ${name} just became solar-affordable. Flip it on.`,
+  name => `🌤️ Sky's cooperating — ${name} fits the budget now.`,
+];
+function pickLine(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
+function checkPowerNotifications(prev, curr){
+  const cfg = state.config;
+  const activeLoad = state.appliances.filter(a=>a.active).reduce((s,a)=>s+a.watt*(a.qty||1),0);
+  const safeLimitNow = curr * (1 - cfg.margin/100);
+
+  if(!notifyBaselineSet){
+    // First reading since the app opened — record where things already stand
+    // without alerting, so opening the app never triggers a notification.
+    notifyBaselineSet = true;
+    if(curr >= notifySettings.threshold) notifiedMilestone = true;
+    state.appliances.filter(a=>!a.active).forEach(a => {
+      if(activeLoad + a.watt*(a.qty||1) <= safeLimitNow) notifiedAppliances.add(a.id);
+    });
+    return;
+  }
+
+  const canNotify = notifySettings.enabled && ('Notification' in window) && Notification.permission === 'granted';
+  const threshold = notifySettings.threshold;
+
+  if(curr >= threshold && prev < threshold){
+    if(!notifiedMilestone){
+      if(canNotify) fireNotification("Solar Advisor", pickLine(MILESTONE_LINES)(Math.round(curr)), 'solar-milestone');
+      notifiedMilestone = true;
+    }
+  } else if(curr < threshold - 50){
+    notifiedMilestone = false; // dropped back with real headroom — allow it to re-alert later
+  }
+
+  const safeLimitPrev = prev * (1 - cfg.margin/100);
+  state.appliances.filter(a=>!a.active).forEach(a => {
+    const need = a.watt * (a.qty || 1);
+    const fitsNow = (activeLoad + need) <= safeLimitNow;
+    const fitsBefore = (activeLoad + need) <= safeLimitPrev;
+    if(fitsNow && !fitsBefore && !notifiedAppliances.has(a.id)){
+      if(canNotify) fireNotification("Solar Advisor", pickLine(APPLIANCE_LINES)(a.name), 'solar-appliance-' + a.id);
+      notifiedAppliances.add(a.id);
+    } else if(!fitsNow){
+      notifiedAppliances.delete(a.id);
+    }
+  });
+}
+
+async function fireNotification(title, body, tag){
+  playChime();
+  try{
+    const opts = { body, icon: 'icon-192.png', badge: 'icon-192.png', vibrate: [80,40,80], tag, renotify: true };
+    if('serviceWorker' in navigator && swRegistration) await swRegistration.showNotification(title, opts);
+    else if('Notification' in window) new Notification(title, opts);
+  }catch(e){}
+}
+
+// A short two-note chime, synthesized on the fly — no audio file to host or
+// cache. Browsers block audio until a user gesture unlocks it, so we prime
+// the context on the first tap/click anywhere in the app.
+let audioCtx = null;
+function unlockAudio(){
+  try{
+    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+  }catch(e){}
+}
+document.addEventListener('click', unlockAudio, { once:true });
+document.addEventListener('touchstart', unlockAudio, { once:true });
+
+function playChime(){
+  if(!notifySettings.sound) return;
+  try{
+    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+    const now = audioCtx.currentTime;
+    [880, 1318.5].forEach((freq, i) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const t0 = now + i * 0.11;
+      gain.gain.setValueAtTime(0, t0);
+      gain.gain.linearRampToValueAtTime(0.16, t0 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.4);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(t0);
+      osc.stop(t0 + 0.42);
+    });
+  }catch(e){}
+}
+
+function refreshNotifyUI(){
+  const statusText = document.getElementById('notifyStatusText');
+  if(!statusText) return;
+  const toggleBtn = document.getElementById('notifyToggleBtn');
+  const soundBtn = document.getElementById('notifySoundBtn');
+  document.getElementById('notifyThreshold').value = notifySettings.threshold;
+  soundBtn.textContent = notifySettings.sound ? 'On' : 'Off';
+
+  if(!('Notification' in window)){
+    statusText.textContent = "Not supported in this browser";
+    toggleBtn.disabled = true;
+  } else if(Notification.permission === 'denied'){
+    statusText.textContent = "Blocked — enable in your browser/phone settings";
+    toggleBtn.textContent = 'Turn on';
+  } else if(notifySettings.enabled && Notification.permission === 'granted'){
+    statusText.textContent = "On — you'll hear from me when power spikes";
+    toggleBtn.textContent = 'Turn off';
+  } else {
+    statusText.textContent = "Off";
+    toggleBtn.textContent = 'Turn on';
+  }
+}
+
+document.getElementById('notifyToggleBtn').addEventListener('click', async () => {
+  const errEl = document.getElementById('notifyError');
+  errEl.textContent = '';
+  if(!('Notification' in window)){
+    errEl.textContent = "This browser doesn't support notifications.";
+    return;
+  }
+  if(notifySettings.enabled){
+    notifySettings.enabled = false;
+    saveNotifySettings();
+    refreshNotifyUI();
+    return;
+  }
+  let perm = Notification.permission;
+  if(perm === 'default') perm = await Notification.requestPermission();
+  if(perm === 'granted'){
+    notifySettings.enabled = true;
+    saveNotifySettings();
+    fireNotification("Solar Advisor", "🔔 Alerts are on — you'll hear from me when the sun delivers.", 'solar-setup');
+  } else {
+    errEl.textContent = "Notifications are blocked for this site — enable them in your browser/phone settings and try again.";
+  }
+  refreshNotifyUI();
+});
+
+document.getElementById('notifyThreshold').addEventListener('change', (e) => {
+  notifySettings.threshold = Math.max(100, parseInt(e.target.value) || 1000);
+  saveNotifySettings();
+  notifiedMilestone = false; // threshold moved — allow a fresh read against it
+});
+
+document.getElementById('notifySoundBtn').addEventListener('click', () => {
+  notifySettings.sound = !notifySettings.sound;
+  saveNotifySettings();
+  refreshNotifyUI();
+  if(notifySettings.sound){ unlockAudio(); playChime(); }
+});
+
+document.getElementById('notifyTestBtn').addEventListener('click', () => {
+  const errEl = document.getElementById('notifyError');
+  errEl.textContent = '';
+  if(!('Notification' in window) || Notification.permission !== 'granted'){
+    errEl.textContent = "Turn on alerts first.";
+    return;
+  }
+  fireNotification("Solar Advisor", pickLine(MILESTONE_LINES)(notifySettings.threshold), 'solar-test');
+});
 
 /* ---------- Settings binding ---------- */
 const SETTINGS_FIELD_MAP = {
@@ -2232,6 +2460,7 @@ function initApp(){
   bindSettings();
   updateLocationLabel();
   document.getElementById('appVersionLabel').textContent = 'v' + APP_VERSION;
+  refreshNotifyUI();
   renderLogHistory();
   retrainModel();
   updateAccountPanel();

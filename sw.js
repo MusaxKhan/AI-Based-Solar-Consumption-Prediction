@@ -3,7 +3,7 @@
 // purged/refetched when the cache name itself changes. Changing index.html
 // alone is NOT enough to trigger the in-app "Check for updates" button — this
 // line has to change too. Keep it in step with APP_VERSION in index.html.
-const CACHE_NAME = "solar-advisor-v4";
+const CACHE_NAME = "solar-advisor-v5";
 const SHELL_FILES = [
   "./",
   "./index.html",
