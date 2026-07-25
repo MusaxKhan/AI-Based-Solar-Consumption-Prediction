@@ -29,7 +29,8 @@
     --radius: 14px;
   }
   *{box-sizing:border-box;}
-  html,body{margin:0;padding:0;}
+  html,body{margin:0;padding:0; overflow-x:hidden; width:100%;}
+  input, select, textarea, button{min-width:0;}
   body{
     background:
       radial-gradient(ellipse 900px 500px at 50% -10%, #1c2a38 0%, transparent 60%),
@@ -41,10 +42,10 @@
   }
   .wrap{max-width:640px; margin:0 auto; padding:20px 16px 0;}
 
-  header.top{display:flex; align-items:baseline; justify-content:space-between; padding:8px 4px 18px;}
-  header.top .brand{font-family:'Sora',sans-serif; font-weight:800; font-size:20px; letter-spacing:-0.02em;}
+  header.top{display:flex; align-items:baseline; justify-content:space-between; padding:8px 4px 18px; gap:10px;}
+  header.top .brand{font-family:'Sora',sans-serif; font-weight:800; font-size:20px; letter-spacing:-0.02em; flex-shrink:0;}
   header.top .brand span{color:var(--amber);}
-  header.top .loc{font-size:12px; color:var(--muted); font-family:'IBM Plex Mono', monospace;}
+  header.top .loc{font-size:12px; color:var(--muted); font-family:'IBM Plex Mono', monospace; min-width:0; text-align:right;}
 
   /* ---- Hero: sun arc ---- */
   .hero{
@@ -133,14 +134,14 @@
   .add-row{display:flex; gap:8px; margin-top:10px;}
   .add-row input{
     background:var(--surface); border:1px solid var(--line); border-radius:8px; color:var(--text);
-    padding:9px 10px; font-size:13px; font-family:'Inter',sans-serif;
+    padding:9px 10px; font-size:13px; font-family:'Inter',sans-serif; min-width:0;
   }
-  .add-row input[name="name"]{flex:1;}
+  .add-row input[name="name"]{flex:1; min-width:0;}
   .add-row input[name="watt"]{width:90px; font-family:'IBM Plex Mono',monospace;}
   .add-row input[name="qty"]{width:56px; font-family:'IBM Plex Mono',monospace;}
   .add-row button{
     background:var(--amber); color:#20160a; border:none; border-radius:8px; padding:0 16px;
-    font-weight:700; font-size:13px; cursor:pointer;
+    font-weight:700; font-size:13px; cursor:pointer; flex-shrink:0;
   }
 
   /* ---- settings ---- */
@@ -338,6 +339,13 @@
   }
   .gate-card h2{font-family:'Sora',sans-serif; font-size:19px; margin:0 0 6px;}
   .gate-card .gate-sub{font-size:12.5px; color:var(--muted); line-height:1.55; margin:0 0 18px;}
+  #gateStepLoading{padding:30px 0; text-align:center;}
+  .gate-loading-spin{
+    display:inline-block; width:26px; height:26px; border-radius:50%;
+    border:3px solid var(--line); border-top-color:var(--cyan);
+    animation:gate-spin 0.7s linear infinite;
+  }
+  @keyframes gate-spin{ to{ transform:rotate(360deg); } }
   .gate-field{display:flex; flex-direction:column; gap:5px; margin-bottom:12px;}
   .gate-field label{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.06em;}
   .gate-field input{
@@ -375,6 +383,10 @@
   @media (max-width:400px){
     .power-readout .num{font-size:36px;}
     .settings-grid{grid-template-columns:1fr;}
+    .add-row{gap:6px;}
+    .add-row input[name="watt"]{width:64px;}
+    .add-row input[name="qty"]{width:42px;}
+    .add-row button{padding:0 12px;}
   }
 </style>
 </head>
@@ -383,7 +395,11 @@
 <div id="gateOverlay">
   <div class="gate-card">
 
-    <div class="gate-step active" id="gateStepIntro">
+    <div class="gate-step active" id="gateStepLoading">
+      <div class="gate-loading-spin"></div>
+    </div>
+
+    <div class="gate-step" id="gateStepIntro">
       <h2>One model, every device</h2>
       <p class="gate-sub">Sync your settings, appliance list, test logs, and trained risk model across your phone and PC. Free, and it's your own private data.</p>
       <button class="gate-btn" id="gateStartSetup">Set up sync</button>
@@ -738,7 +754,7 @@
 // Bump this on every deploy — shown in System settings and used to confirm an
 // update actually landed. Bump sw.js's CACHE_NAME at the same time (see that
 // file's top comment) or the service worker won't notice anything changed.
-const APP_VERSION = "1.2.0";
+const APP_VERSION = "1.3.0";
 
 const STORAGE_KEY = "solar_advisor_state_v1";
 
@@ -1707,15 +1723,38 @@ function getTestHistoryTool(context, applianceFilter){
   return { count: logs.length, entries: logs.slice(0, 10) };
 }
 
+// The key lives in state.config so it syncs to the cloud exactly like every
+// other setting already does — no separate sync plumbing, no database schema
+// change needed. localStorage is kept only as a fast local cache so the chat
+// panel doesn't have to wait on a network round trip to know it's connected.
 let groqApiKey = localStorage.getItem(GROQ_KEY_STORAGE) || '';
 let agentMessages = []; // running conversation (user/assistant/tool), system prompt added per-request
-let agentConnected = !!groqApiKey;
+let agentConnected = false;
 
-if(agentConnected){
-  document.getElementById('chatSetup').style.display = 'none';
-  document.getElementById('chatMessages').style.display = 'flex';
-  document.getElementById('chatInputRow').style.display = 'flex';
+function applyGroqKey(key){
+  const changed = key !== groqApiKey;
+  groqApiKey = key || '';
+  agentConnected = !!groqApiKey;
+  if(groqApiKey) localStorage.setItem(GROQ_KEY_STORAGE, groqApiKey);
+  else localStorage.removeItem(GROQ_KEY_STORAGE);
+
+  const setupEl = document.getElementById('chatSetup');
+  if(!setupEl) return; // called before DOM ready — fine, applied again on init
+  if(agentConnected){
+    setupEl.style.display = 'none';
+    document.getElementById('chatMessages').style.display = 'flex';
+    document.getElementById('chatInputRow').style.display = 'flex';
+  } else {
+    setupEl.style.display = 'block';
+    document.getElementById('chatMessages').style.display = 'none';
+    document.getElementById('chatInputRow').style.display = 'none';
+  }
+  if(changed){
+    agentMessages = [];
+    document.getElementById('chatMessages').innerHTML = '';
+  }
 }
+applyGroqKey(groqApiKey); // paint from the local cache immediately; loadCloudState may update it shortly after
 
 document.getElementById('chatFab').addEventListener('click', () => {
   document.getElementById('chatPanel').classList.add('open');
@@ -1748,14 +1787,9 @@ document.getElementById('agentConnectBtn').addEventListener('click', async () =>
       const body = await res.json().catch(() => ({}));
       throw new Error(body?.error?.message || `HTTP ${res.status}`);
     }
-    groqApiKey = key;
-    localStorage.setItem(GROQ_KEY_STORAGE, key);
-    agentConnected = true;
-    agentMessages = [];
-    document.getElementById('chatMessages').innerHTML = '';
-    document.getElementById('chatSetup').style.display = 'none';
-    document.getElementById('chatMessages').style.display = 'flex';
-    document.getElementById('chatInputRow').style.display = 'flex';
+    applyGroqKey(key);
+    state.config.groqApiKey = key;
+    saveState(); // also pushes to the cloud (debounced) so other devices pick it up
     addChatBubble("Connected. Ask me anything about what's safe to run right now.", 'system-note');
   }catch(e){
     errEl.textContent = "Couldn't connect — " + (e.message || 'check your key and try again.');
@@ -2146,6 +2180,7 @@ async function loadCloudState(){
     if(data.logs) localStorage.setItem(LOG_KEY, JSON.stringify(data.logs));
     if(data.model) localStorage.setItem(MODEL_KEY, JSON.stringify(data.model));
     else localStorage.removeItem(MODEL_KEY);
+    if(state.config.groqApiKey) applyGroqKey(state.config.groqApiKey);
   } else {
     await pushCloudState(); // first login for this account — seed the row with local defaults
   }
@@ -2220,6 +2255,7 @@ function initApp(){
 }
 
 async function bootstrap(){
+  showGateStep('gateStepLoading');
   if(localStorage.getItem(SKIP_CLOUD_KEY) === '1'){
     enterApp();
     return;
