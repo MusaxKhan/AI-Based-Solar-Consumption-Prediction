@@ -87,6 +87,31 @@ database except to sync between your own devices; the anon key is safe to have i
 frontend by design (Supabase's Row Level Security is what actually protects the data, not
 the key being secret).
 
+## Live inverter link (optional — Growatt)
+
+By default the app is a pure physics estimate (sun + satellite/forecast sky data). If
+you or a customer has a **Growatt** inverter, you can optionally connect it to show real
+generation and battery charge alongside the estimate — no new hardware to buy, and it's
+free:
+
+1. Growatt's API doesn't allow direct calls from a browser, so you need a small free
+   relay. Deploy the included Edge Function (uses your existing Supabase project from
+   Cross-device sync above, no new account needed):
+   ```
+   supabase functions deploy growatt-proxy --no-verify-jwt
+   ```
+   Full deploy steps are in the comment at the top of `supabase/functions/growatt-proxy/index.ts`.
+2. Generate a free API token from the Growatt account: ShinePhone app or web dashboard →
+   **Settings → Account Management → API Key**.
+3. In the app, open **System settings → Live inverter link (optional)**, paste in your
+   Edge Function URL and the token, tap **Find plants** to auto-fill the plant/device IDs,
+   then **Save & connect**.
+4. The main screen will now show a live "Live inverter reading" line next to the physics
+   estimate, along with battery charge % if the inverter is a hybrid/SPH model.
+
+This is entirely optional — leave these fields blank and the app behaves exactly as
+before.
+
 ## Tuning it to match reality
 
 The **System settings** panel (bottom of the app) lets you adjust:
@@ -98,9 +123,10 @@ The **System settings** panel (bottom of the app) lets you adjust:
 
 ## Roadmap (next, once you're ready)
 
-1. **Connect the Inverterzone dongle** once you've bought/installed it — inspect its
-   app traffic (or Modbus registers over the RS232 port) to pull real generation
-   numbers instead of relying only on the physics estimate.
+1. ~~Connect a real inverter for ground-truth generation data~~ — done via the
+   **Growatt live link** above (free, no dongle purchase needed for Growatt-brand
+   systems). The Inverterzone dongle route is still worth doing later for non-Growatt
+   inverters or if you want raw Modbus access.
 2. Once you've got a couple dozen logged entries (from the "Log what happened" button),
    **train a correction model** (simple scikit-learn regression is enough) on predicted vs.
    actual outcomes to fix systematic gaps — dust, shading, your specific derate.

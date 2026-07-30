@@ -512,6 +512,8 @@
       <span class="unit">W available</span>
     </div>
     <div class="hero-sub" id="heroSub">Fetching sky conditions…</div>
+    <div class="hero-sub" id="growattLiveRow" style="display:none; color:var(--cyan);"></div>
+    <div class="hero-sub" id="savingsRow" style="display:none; color:var(--muted);"></div>
 
     <div class="weather-chips" id="weatherChips"></div>
 
@@ -692,6 +694,72 @@
   </section>
 
   <section>
+    <details class="settings" id="growattPanel">
+      <summary>Live inverter link (optional)</summary>
+      <div class="seasonal-body">
+        <p class="seasonal-intro">Have a Growatt inverter? Connect it to show real generation and battery charge alongside the estimate, instead of relying on the physics model alone. Fully optional — everything else keeps working without this.</p>
+
+        <div class="field full" style="margin-bottom:10px;">
+          <label>Proxy URL (your Supabase Edge Function)</label>
+          <input type="text" id="cfgGrowattProxy" placeholder="https://xxxxx.supabase.co/functions/v1/growatt-proxy">
+        </div>
+        <div class="field full" style="margin-bottom:10px;">
+          <label>Growatt API token</label>
+          <input type="password" id="cfgGrowattToken" placeholder="Settings → Account Management → API Key in ShinePhone app">
+        </div>
+        <div class="field full" style="margin-bottom:10px;">
+          <label>Plant ID</label>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <input type="text" id="cfgGrowattPlantId" placeholder="Tap 'Find plants' below" style="flex:1;">
+            <button class="load-btn" id="growattFindPlantsBtn" style="flex-shrink:0;">Find plants</button>
+          </div>
+        </div>
+        <div class="field full" style="margin-bottom:10px;">
+          <label>Device serial number</label>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <input type="text" id="cfgGrowattDeviceSn" placeholder="Tap 'Find plants' first, then this fills in" style="flex:1;">
+          </div>
+        </div>
+        <button class="load-btn" id="growattSaveBtn">Save & connect</button>
+        <p class="chat-setup-error" id="growattError"></p>
+        <p class="seasonal-intro" id="growattStatus" style="margin-top:8px;"></p>
+      </div>
+    </details>
+  </section>
+
+  <section>
+    <details class="settings" id="savingsPanel">
+      <summary>Savings & billing (optional)</summary>
+      <div class="seasonal-body">
+        <p class="seasonal-intro">Show the rupee value of the solar you're using, based on your own electricity rate. Residential rates vary a lot by DISCO and usage slab and change with NEPRA notifications, so this isn't pre-filled — grab the per-unit rate straight off your latest bill for an accurate number.</p>
+
+        <div class="field full" style="margin-bottom:10px;">
+          <label>Your DISCO (for display only, not used in the calculation)</label>
+          <select id="cfgDiscoName">
+            <option value="">— Select (optional) —</option>
+            <option value="LESCO">LESCO — Lahore</option>
+            <option value="IESCO">IESCO — Islamabad</option>
+            <option value="GEPCO">GEPCO — Gujranwala</option>
+            <option value="FESCO">FESCO — Faisalabad</option>
+            <option value="MEPCO">MEPCO — Multan</option>
+            <option value="PESCO">PESCO — Peshawar</option>
+            <option value="HESCO">HESCO — Hyderabad</option>
+            <option value="SEPCO">SEPCO — Sukkur</option>
+            <option value="QESCO">QESCO — Quetta</option>
+            <option value="TESCO">TESCO — Tribal areas</option>
+            <option value="K-Electric">K-Electric — Karachi</option>
+            <option value="Other">Other / outside Pakistan</option>
+          </select>
+        </div>
+        <div class="field full" style="margin-bottom:10px;">
+          <label>Your rate (PKR per unit / kWh) — from your bill</label>
+          <input type="number" id="cfgRatePkr" placeholder="e.g. 45" min="0" step="0.5">
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <section>
     <details class="settings" id="notifyPanel" open>
       <summary>Power alerts & sound</summary>
       <div class="seasonal-body">
@@ -787,7 +855,7 @@
 // Bump this on every deploy — shown in System settings and used to confirm an
 // update actually landed. Bump sw.js's CACHE_NAME at the same time (see that
 // file's top comment) or the service worker won't notice anything changed.
-const APP_VERSION = "1.4.0";
+const APP_VERSION = "1.5.0";
 
 const STORAGE_KEY = "solar_advisor_state_v1";
 
@@ -815,8 +883,27 @@ const DEFAULT_CONFIG = {
   tilt: 25,
   inverterCap: 6000,
   derate: 82,
-  margin: 15
+  margin: 15,
+  // Optional live inverter link (Growatt). Blank = feature off, app behaves
+  // exactly as before — physics estimate only. Token is generated free from
+  // the ShinePhone app or Growatt web dashboard: Settings > Account
+  // Management > API Key. Proxy URL is your own free Supabase Edge Function
+  // (see supabase/functions/growatt-proxy) — Growatt's API blocks direct
+  // browser calls, so this relay is required.
+  growattProxyUrl: "",
+  growattToken: "",
+  growattPlantId: "",
+  growattDeviceSn: "",
+  // Optional savings framing. Blank rate = feature off, no PKR figures shown
+  // anywhere. Deliberately NOT auto-filled per DISCO — tariffs change with
+  // NEPRA notifications and baking in a specific number risks it going stale
+  // in something you might show to a pitch partner. User enters their own
+  // rate straight off their bill.
+  discoName: "",
+  ratePkrPerKwh: 0
 };
+
+const DEFAULT_TODAY = () => ({ date: new Date().toDateString(), kwh: 0, pkr: 0 });
 
 function normalizeAppliances(list){
   return (list || []).map(a => ({ qty: 1, ...a }));
@@ -827,13 +914,16 @@ function loadState(){
     const raw = localStorage.getItem(STORAGE_KEY);
     if(raw){
       const parsed = JSON.parse(raw);
+      const today = (parsed.today && parsed.today.date === new Date().toDateString())
+        ? parsed.today : DEFAULT_TODAY();
       return {
         appliances: normalizeAppliances(parsed.appliances && parsed.appliances.length ? parsed.appliances : DEFAULT_APPLIANCES),
-        config: { ...DEFAULT_CONFIG, ...(parsed.config || {}) }
+        config: { ...DEFAULT_CONFIG, ...(parsed.config || {}) },
+        today
       };
     }
   }catch(e){}
-  return { appliances: normalizeAppliances(DEFAULT_APPLIANCES), config: { ...DEFAULT_CONFIG } };
+  return { appliances: normalizeAppliances(DEFAULT_APPLIANCES), config: { ...DEFAULT_CONFIG }, today: DEFAULT_TODAY() };
 }
 function saveState(){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -1039,6 +1129,13 @@ async function refresh(){
   updateBudget(availableWatts);
 
   lastReading = { poa, temp, cloud, source, hour: now.getHours(), sunElevation: sun.elevation };
+
+  if(cfg.growattProxyUrl && cfg.growattToken && cfg.growattDeviceSn){
+    fetchGrowattLive().then(renderGrowattLive).catch(() => {
+      // Live link is optional — a failed fetch just means the physics estimate
+      // stays as the only number shown; no need to interrupt the user.
+    });
+  }
 }
 
 let lastReading = {};
@@ -1175,11 +1272,47 @@ document.getElementById('appModalDelete').addEventListener('click', () => {
 });
 
 let lastAvailable = 0;
+let lastAccumAt = Date.now();
 function updateBudget(availableWatts){
   const prevAvailable = lastAvailable;
   lastAvailable = availableWatts;
+  accumulateSavings();
   recomputeBudget();
   checkPowerNotifications(prevAvailable, lastAvailable);
+}
+
+function accumulateSavings(){
+  const cfg = state.config;
+  const now = Date.now();
+  const elapsedHours = (now - lastAccumAt) / 3600000;
+  lastAccumAt = now;
+  // Guard against absurd gaps (tab backgrounded for hours, laptop asleep, etc.)
+  // so we don't attribute a huge chunk of "savings" to a period we weren't
+  // actually reading live data for.
+  if(elapsedHours <= 0 || elapsedHours > 0.5) return;
+  if(!state.today || state.today.date !== new Date().toDateString()) state.today = DEFAULT_TODAY();
+
+  const activeLoad = state.appliances.filter(a=>a.active).reduce((s,a)=>s+a.watt*(a.qty||1),0);
+  const usedWatts = Math.min(activeLoad, lastAvailable);
+  const kwh = (usedWatts / 1000) * elapsedHours;
+  state.today.kwh += kwh;
+  if(cfg.ratePkrPerKwh > 0){
+    state.today.pkr += kwh * cfg.ratePkrPerKwh;
+  }
+  saveState();
+  renderSavingsRow();
+}
+
+function renderSavingsRow(){
+  const row = document.getElementById('savingsRow');
+  const cfg = state.config;
+  if(!cfg.ratePkrPerKwh || cfg.ratePkrPerKwh <= 0 || !state.today){ row.style.display = 'none'; return; }
+  const activeLoad = state.appliances.filter(a=>a.active).reduce((s,a)=>s+a.watt*(a.qty||1),0);
+  const usedWatts = Math.min(activeLoad, lastAvailable);
+  const ratePerHour = (usedWatts / 1000) * cfg.ratePkrPerKwh;
+  row.style.display = 'block';
+  row.textContent = `≈ PKR ${ratePerHour.toFixed(1)}/hr right now · today so far: `
+    + `${state.today.kwh.toFixed(2)} kWh ≈ PKR ${Math.round(state.today.pkr).toLocaleString()}`;
 }
 
 function recomputeBudget(){
@@ -1437,6 +1570,147 @@ function bindSettings(){
     });
   });
 }
+
+/* ---------- Growatt live-link (optional) ----------
+   Growatt's API doesn't send CORS headers, so calls go through a small
+   Supabase Edge Function relay (see supabase/functions/growatt-proxy).
+   Everything here is inert — refresh() only calls fetchGrowattLive() when
+   proxyUrl/token/deviceSn are all set. */
+
+async function growattCall(action, extra){
+  const cfg = state.config;
+  const cloud = getCloudConfig(); // reuse the anon key from Cross-device sync setup, if configured
+  const headers = { 'Content-Type': 'application/json' };
+  if(cloud && cloud.key) headers['apikey'] = cloud.key;
+  const res = await fetch(cfg.growattProxyUrl, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ token: cfg.growattToken, action, ...extra })
+  });
+  const data = await res.json().catch(() => null);
+  if(!res.ok || !data || data.error){
+    throw new Error((data && data.error) || `Proxy returned ${res.status}`);
+  }
+  return data;
+}
+
+function syncGrowattFields(){
+  document.getElementById('cfgGrowattProxy').value = state.config.growattProxyUrl || '';
+  document.getElementById('cfgGrowattToken').value = state.config.growattToken || '';
+  document.getElementById('cfgGrowattPlantId').value = state.config.growattPlantId || '';
+  document.getElementById('cfgGrowattDeviceSn').value = state.config.growattDeviceSn || '';
+  const status = document.getElementById('growattStatus');
+  if(status) status.textContent = (state.config.growattToken && state.config.growattDeviceSn) ? 'Connected — live readings shown on the main screen.' : '';
+}
+
+function readGrowattFieldsIntoConfig(){
+  state.config.growattProxyUrl = document.getElementById('cfgGrowattProxy').value.trim();
+  state.config.growattToken = document.getElementById('cfgGrowattToken').value.trim();
+  state.config.growattPlantId = document.getElementById('cfgGrowattPlantId').value.trim();
+  state.config.growattDeviceSn = document.getElementById('cfgGrowattDeviceSn').value.trim();
+}
+
+document.getElementById('growattFindPlantsBtn').addEventListener('click', async () => {
+  const errEl = document.getElementById('growattError');
+  const statusEl = document.getElementById('growattStatus');
+  errEl.textContent = ''; statusEl.textContent = 'Looking up your plants…';
+  readGrowattFieldsIntoConfig();
+  if(!state.config.growattProxyUrl || !state.config.growattToken){
+    errEl.textContent = 'Fill in the proxy URL and API token first.';
+    statusEl.textContent = '';
+    return;
+  }
+  try{
+    const plants = await growattCall('plant_list');
+    const list = plants?.data?.plants || plants?.plants || [];
+    if(!list.length){
+      statusEl.textContent = '';
+      errEl.textContent = 'No plants found on this token — double-check the token and try again.';
+      return;
+    }
+    const plant = list[0]; // most accounts have one plant; first match is a safe default
+    const plantId = plant.plant_id || plant.id;
+    document.getElementById('cfgGrowattPlantId').value = plantId;
+    state.config.growattPlantId = String(plantId);
+
+    const detail = await growattCall('plant_detail', { plantId: state.config.growattPlantId });
+    const devices = detail?.data?.devices || detail?.devices || [];
+    if(devices.length){
+      const sn = devices[0].device_sn || devices[0].sn || devices[0].deviceSn;
+      if(sn){
+        document.getElementById('cfgGrowattDeviceSn').value = sn;
+        state.config.growattDeviceSn = sn;
+      }
+    }
+    saveState();
+    statusEl.textContent = `Found "${plant.plant_name || plant.name || 'plant'}" — device serial filled in below. Tap Save & connect.`;
+  }catch(err){
+    statusEl.textContent = '';
+    errEl.textContent = 'Could not reach Growatt: ' + err.message + '. If this persists, your account may be on a different regional server — see the comment at the top of growatt-proxy/index.ts.';
+  }
+});
+
+document.getElementById('growattSaveBtn').addEventListener('click', async () => {
+  const errEl = document.getElementById('growattError');
+  const statusEl = document.getElementById('growattStatus');
+  errEl.textContent = ''; statusEl.textContent = 'Connecting…';
+  readGrowattFieldsIntoConfig();
+  saveState();
+  if(!state.config.growattProxyUrl || !state.config.growattToken || !state.config.growattDeviceSn){
+    statusEl.textContent = '';
+    errEl.textContent = 'Proxy URL, token, and device serial are all required.';
+    return;
+  }
+  try{
+    await fetchGrowattLive();
+    statusEl.textContent = 'Connected — live readings now shown on the main screen.';
+  }catch(err){
+    statusEl.textContent = '';
+    errEl.textContent = 'Could not reach the inverter: ' + err.message;
+  }
+});
+
+let lastGrowattReading = null; // { liveWatts, soc, fetchedAt } — also used to prefill "Log what happened"
+
+async function fetchGrowattLive(){
+  const cfg = state.config;
+  if(!cfg.growattProxyUrl || !cfg.growattToken || !cfg.growattDeviceSn) return null;
+  const data = await growattCall('device_data', { deviceSn: cfg.growattDeviceSn });
+  const d = data?.data || data || {};
+  // Field names follow Growatt's mix/MIN device schema; different inverter
+  // families (SPH, MIN, TLX) may use slightly different keys, so check a
+  // couple of common variants.
+  const liveWatts = Number(d.pac || d.ppv || d.outPutPower || 0);
+  const soc = d.soc !== undefined ? Number(d.soc) : (d.capacity !== undefined ? Number(d.capacity) : null);
+  lastGrowattReading = { liveWatts, soc, fetchedAt: Date.now() };
+  return lastGrowattReading;
+}
+
+function renderGrowattLive(){
+  const row = document.getElementById('growattLiveRow');
+  if(!lastGrowattReading){ row.style.display = 'none'; return; }
+  const { liveWatts, soc } = lastGrowattReading;
+  row.style.display = 'block';
+  row.textContent = `Live inverter reading: ${Math.round(liveWatts).toLocaleString()}W`
+    + (soc !== null && !Number.isNaN(soc) ? ` · Battery ${Math.round(soc)}%` : '');
+}
+
+/* ---------- Savings & billing (optional) ---------- */
+function syncSavingsFields(){
+  document.getElementById('cfgDiscoName').value = state.config.discoName || '';
+  document.getElementById('cfgRatePkr').value = state.config.ratePkrPerKwh || '';
+}
+document.getElementById('cfgDiscoName').addEventListener('change', (e) => {
+  state.config.discoName = e.target.value;
+  saveState();
+});
+document.getElementById('cfgRatePkr').addEventListener('change', (e) => {
+  state.config.ratePkrPerKwh = Math.max(0, parseFloat(e.target.value) || 0);
+  saveState();
+  renderSavingsRow();
+});
+
+
 
 document.getElementById('addBtn').addEventListener('click', () => {
   const nameEl = document.getElementById('newName');
@@ -2458,6 +2732,8 @@ function enterApp(){
 function initApp(){
   renderAppliances();
   bindSettings();
+  syncGrowattFields();
+  syncSavingsFields();
   updateLocationLabel();
   document.getElementById('appVersionLabel').textContent = 'v' + APP_VERSION;
   refreshNotifyUI();
