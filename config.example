@@ -1,0 +1,15 @@
+// TEMPLATE — copy this file's output shape, don't hand-edit it directly.
+//
+// Real config.js is generated from your .env file by `node scripts/build-config.js`
+// (see README → "Cross-device sync") and is gitignored, so your credentials never
+// get committed. This file just documents what config.js looks like once built,
+// so anyone cloning the repo understands the shape without needing to run the
+// build script first.
+//
+// Note: a Supabase anon key is meant to be public — it's the same key your
+// browser would send on every request either way. Row Level Security (not
+// secrecy of this key) is what keeps each user's data private. Never put your
+// Supabase service_role key here or anywhere client-side.
+
+window.__SUPABASE_URL__ = "https://xxxxx.supabase.co";
+window.__SUPABASE_ANON_KEY__ = "eyJhbGciOi...";

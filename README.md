@@ -61,33 +61,40 @@ an LLM to do something a calculator already does better.
 
 ## Cross-device sync (accounts)
 
-By default the app works standalone on one device (data in `localStorage`). To use the
-same account — settings, appliances, test logs, and trained risk model — on both your
-phone and PC, set up free cloud sync via Supabase:
+By default the app works standalone on one device (data in `localStorage`). To let anyone
+who opens the app sync their settings, appliances, test logs, and trained risk model across
+devices, wire up one Supabase project — you do this once, as the developer; users just log in.
 
 1. Go to [supabase.com](https://supabase.com), sign up free, create a new project.
 2. In your project, open **SQL Editor → New query**, paste the contents of
    `supabase_setup.sql` (included in this folder), and run it. This creates one table,
-   locked down with Row Level Security so you can only ever see your own data.
+   locked down with Row Level Security so every user can only ever see their own row —
+   this is what keeps data private between users, not which project it's in.
 3. Go to **Project Settings → API**. Copy the **Project URL** and the **anon public** key.
-4. Optional but recommended for solo use: **Authentication → Providers → Email** → turn
-   off "Confirm email", so signing up logs you in immediately instead of requiring an
-   email click.
-5. Open the app. On first launch you'll see a setup screen — tap **"Set up sync"**, paste
-   in the URL and anon key from step 3, then sign up with any email + password.
-6. On your other device, open the app, do the same setup with the **same** Supabase URL
-   and key, then **log in** (not sign up) with the same email/password — you'll see the
-   same appliances, logs, and trained model immediately.
+4. Optional but recommended: **Authentication → Providers → Email** → turn off "Confirm
+   email", so signing up logs a user in immediately instead of requiring an email click.
+5. In the repo root, create a `.env` file (gitignored — never committed):
+   ```
+   PROJECT_URL=https://xxxxx.supabase.co
+   ANON_KEY=eyJhbGciOi...
+   ```
+6. Run `node scripts/build-config.js`. This generates `config.js` (also gitignored) from
+   your `.env`. Re-run it any time you change `.env`.
+7. Open the app. New users now land straight on **"Set up sync" → sign up** — no URL/key
+   entry needed, since it's baked in. Tapping **"Skip — use this device only"** still works
+   for anyone who wants local-only mode.
 
-If you'd rather skip this entirely, tap **"Skip — use this device only"** on first launch;
-everything still works exactly as before, just local to that one device.
+**Deploying** (Vercel/Netlify/etc.): set `PROJECT_URL` and `ANON_KEY` as environment
+variables in your host's dashboard (free on every major static host) and set
+`node scripts/build-config.js` as the build command, so `config.js` regenerates fresh on
+every deploy instead of you needing to remember to run it locally.
 
-Nothing about your solar setup — appliance list, logs, model — ever leaves Supabase's
-database except to sync between your own devices; the anon key is safe to have in the
-frontend by design (Supabase's Row Level Security is what actually protects the data, not
-the key being secret).
+A Supabase anon key is safe to ship in the frontend by design — Row Level Security is what
+actually protects each user's data, not the key being secret. Never put a `service_role`
+key anywhere client-side.
 
 ## Live inverter link (optional — Growatt)
+
 
 By default the app is a pure physics estimate (sun + satellite/forecast sky data). If
 you or a customer has a **Growatt** inverter, you can optionally connect it to show real
